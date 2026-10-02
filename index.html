@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Daily AI Brief</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --card: #ffffff; --text: #1d1d1b; --muted: #6b6a66;
+    --line: #dedcd5; --accent: #1f5eff; --accent-text: #ffffff; --err: #b3261e;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151515; --card: #1f1f1e; --text: #f0efea; --muted: #9c9a94;
+            --line: #33332f; --accent: #6b95ff; --accent-text: #0b0b0b; --err: #ff8a80; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+          padding: 16px; margin-bottom: 16px; }
+  label { display: block; font-size: 14px; color: var(--muted); margin: 0 0 6px; }
+  input[type=password], input[type=text], select, textarea {
+    width: 100%; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  textarea { min-height: 280px; resize: vertical; line-height: 1.45; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > div { flex: 1 1 200px; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 15px; }
+  .check input { width: 20px; height: 20px; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 14px 18px;
+           min-height: 48px; cursor: pointer; }
+  .primary { background: var(--accent); color: var(--accent-text); width: 100%; }
+  .secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .actions button { flex: 1 1 160px; }
+  #status { color: var(--muted); min-height: 24px; margin: 4px 0 12px; }
+  #status.err { color: var(--err); }
+  audio { width: 100%; margin-top: 4px; }
+  a.dl { display: inline-block; margin-top: 10px; color: var(--accent); }
+  .note { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Daily AI Brief</h1>
+  <p class="sub" id="today"></p>
+
+  <div class="card">
+    <button class="primary" id="goBtn">Make today's brief</button>
+    <p id="status"></p>
+    <div id="player" class="hidden">
+      <audio id="audio" controls playsinline></audio>
+      <a class="dl" id="dl" download>Save audio file</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <label for="script">Script (you can edit it, then tap "Voice this text")</label>
+    <textarea id="script" placeholder="The script appears here."></textarea>
+    <div class="actions">
+      <button class="secondary" id="writeBtn">Write script only</button>
+      <button class="secondary" id="voiceBtn">Voice this text</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <label for="key">Google API key</label>
+    <input type="password" id="key" placeholder="Paste your Gemini API key" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div class="check"><input type="checkbox" id="remember" checked><label for="remember" style="margin:0">Remember on this device</label></div>
+    <div class="row" style="margin-top:14px">
+      <div>
+        <label for="voice">Voice</label>
+        <select id="voice">
+          <option>Charon</option><option>Kore</option><option>Puck</option>
+          <option>Zephyr</option><option>Sulafat</option><option>Schedar</option>
+          <option>Achird</option><option>Sadaltager</option>
+        </select>
+      </div>
+      <div>
+        <label for="model">TTS model</label>
+        <select id="model">
+          <option value="gemini-3.8-flash-tts">Gemini 3.8 Flash TTS</option>
+          <option value="gemini-3.8-flash-lite-tts">Gemini 3.8 Flash-Lite TTS (cheaper)</option>
+        </select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <div>
+        <label for="textModel">Script model (uses Google Search)</label>
+        <input type="text" id="textModel" value="gemini-3.8-flash">
+      </div>
+    </div>
+    <div class="actions"><button class="secondary" id="testBtn">Test connection</button></div>
+    <p class="note">Your key is stored only in this browser and sent only to Google's API.</p>
+  </div>
+</main>
+
+<script>
+const API = "https://generativelanguage.googleapis.com/v1beta/models/";
+const SAMPLE_RATE = 24000;
+const STYLE = "clear, steady, neutral news delivery";
+const $ = id => document.getElementById(id);
+
+// Settings
+function load(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } }
+function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+$("key").value = load("gemini_key", "");
+$("voice").value = load("voice", "Charon");
+$("model").value = load("tts_model", "gemini-3.8-flash-tts");
+$("textModel").value = load("text_model", "gemini-3.8-flash");
+$("today").textContent = new Date().toLocaleDateString(undefined,
+  { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+function persist() {
+  if ($("remember").checked) save("gemini_key", $("key").value.trim());
+  else { try { localStorage.removeItem("gemini_key"); } catch (e) {} }
+  save("voice", $("voice").value);
+  save("tts_model", $("model").value);
+  save("text_model", $("textModel").value.trim());
+}
+
+function status(msg, isErr) {
+  const s = $("status");
+  s.textContent = msg;
+  s.className = isErr ? "err" : "";
+}
+function busy(b) { ["goBtn", "writeBtn", "voiceBtn", "testBtn"].forEach(id => $(id).disabled = b); }
+function needKey() {
+  const k = $("key").value.trim();
+  if (!k) throw new Error("Paste your Google API key in the settings card first.");
+  return k;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function callGemini(model, body, key, step) {
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(API + model + ":generateContent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify(body)
+      });
+      if (res.ok) return res.json();
+      const txt = await res.text();
+      lastErr = new Error(step + " failed. Google API " + res.status + ": " + txt.slice(0, 300));
+      if (res.status !== 429 && res.status < 500) break;
+    } catch (e) {
+      // Network level failure (Safari reports it as "Load failed")
+      lastErr = new Error(step + " failed before Google replied (" + (e.message || e) + "). " +
+        "Page address: " + location.protocol + "//" + (location.host || "local file") + ". " +
+        "Try Test connection, keep this tab open while it runs, and turn off content blockers for this page.");
+    }
+    await sleep(1500 * (attempt + 1));
+  }
+  throw lastErr;
+}
+
+// Step 1: write the script with Google Search grounding
+async function writeScript() {
+  const key = needKey();
+  const today = new Date().toLocaleDateString("en-US",
+    { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const prompt = `Write a spoken news brief about the most important AI news from the last 24 to 48 hours.
+Today is ${today}.
+
+Rules:
+- Use Google Search. Only include facts you found in sources, and say "reportedly" where a claim is unconfirmed.
+- Open with: "This is your AI news brief for ${today}."
+- 5 to 6 stories, about 350 words total, plain spoken English.
+- One paragraph per story, separated by a blank line. End each story paragraph with <short pause>.
+- Spell out numbers and symbols the way a person would say them.
+- No markdown, no bullet points, no headings, no em dashes, no stage directions other than <short pause>.
+- Close with: "That's the brief."
+Return only the script text.`;
+  const data = await callGemini($("textModel").value.trim(), {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    tools: [{ google_search: {} }]
+  }, key, "Writing the script");
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  let text = parts.map(p => p.text || "").join("").trim();
+  if (!text) throw new Error("The script model returned no text.");
+  text = text.replace(/[*#`]/g, "").replace(/\u2014/g, ", ").replace(/\n{3,}/g, "\n\n");
+  $("script").value = text;
+  return text;
+}
+
+// Step 2: voice it, one paragraph per call, join into one WAV
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function wavFromPcm(chunks) {
+  const gap = new Uint8Array(Math.floor(SAMPLE_RATE * 0.4) * 2);
+  let total = 0;
+  chunks.forEach(c => total += c.length + gap.length);
+  const buf = new ArrayBuffer(44 + total);
+  const v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, "RIFF"); v.setUint32(4, 36 + total, true); w(8, "WAVE"); w(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, SAMPLE_RATE, true); v.setUint32(28, SAMPLE_RATE * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, total, true);
+  const u8 = new Uint8Array(buf);
+  let off = 44;
+  chunks.forEach(c => { u8.set(c, off); off += c.length; u8.set(gap, off); off += gap.length; });
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+async function voiceScript(text) {
+  const key = needKey();
+  const paragraphs = text.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  if (!paragraphs.length) throw new Error("There is no script to voice.");
+  const chunks = [];
+  for (let i = 0; i < paragraphs.length; i++) {
+    status(`Voicing paragraph ${i + 1} of ${paragraphs.length}...`);
+    const data = await callGemini($("model").value, {
+      contents: [{ role: "user", parts: [{ text: paragraphs[i], speech_metadata: { style: STYLE } }] }],
+      generationConfig: {
+        responseModalities: ["AUDIO"],
+        responseFormat: { audio: { mimeType: "AUDIO_L16", sampleRate: SAMPLE_RATE } },
+        speechConfig: { voiceConfig: { voice: $("voice").value } }
+      }
+    }, key, "Voicing paragraph " + (i + 1));
+    const b64 = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!b64) throw new Error("No audio came back for paragraph " + (i + 1) + ".");
+    chunks.push(b64ToBytes(b64));
+  }
+  const blob = wavFromPcm(chunks);
+  const url = URL.createObjectURL(blob);
+  const audio = $("audio");
+  audio.src = url;
+  $("dl").href = url;
+  $("dl").download = "ai-brief-" + new Date().toISOString().slice(0, 10) + ".wav";
+  $("player").classList.remove("hidden");
+  status("Ready. Tap play.");
+  audio.play().catch(() => {});
+}
+
+async function run(fn) {
+  busy(true);
+  try { persist(); await fn(); }
+  catch (e) { status(e.message || String(e), true); }
+  finally { busy(false); }
+}
+
+$("testBtn").onclick = () => run(async () => {
+  const key = needKey();
+  status("Testing connection to Google...");
+  let res;
+  try {
+    res = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1",
+      { headers: { "x-goog-api-key": key } });
+  } catch (e) {
+    throw new Error("Cannot reach Google from this page (" + (e.message || e) + "). Page address: " +
+      location.protocol + "//" + (location.host || "local file") +
+      ". If this is a file opened from Files or inside Claude, host the page on Netlify or GitHub Pages instead.");
+  }
+  if (res.ok) status("Connection works and the key is accepted.");
+  else throw new Error("Google replied " + res.status + ": " + (await res.text()).slice(0, 200));
+});
+$("goBtn").onclick = () => run(async () => {
+  status("Searching the news and writing the script...");
+  const text = await writeScript();
+  await voiceScript(text);
+});
+$("writeBtn").onclick = () => run(async () => {
+  status("Searching the news and writing the script...");
+  await writeScript();
+  status("Script ready. Edit it if you like, then tap Voice this text.");
+});
+$("voiceBtn").onclick = () => run(async () => { await voiceScript($("script").value); });
+</script>
+</body>
+</html>
