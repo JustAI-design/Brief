@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Daily AI Brief</title>
+<title>Daily AI Audio</title>
 <style>
   :root {
     --bg: #f6f5f1; --card: #ffffff; --text: #1d1d1b; --muted: #6b6a66;
@@ -21,6 +21,7 @@
          font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
   main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
   h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 0 0 10px; }
   .sub { color: var(--muted); margin: 0 0 20px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
           padding: 16px; margin-bottom: 16px; }
@@ -28,11 +29,13 @@
   input[type=password], input[type=text], select, textarea {
     width: 100%; font: inherit; color: var(--text); background: var(--bg);
     border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
-  textarea { min-height: 280px; resize: vertical; line-height: 1.45; }
-  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  textarea { min-height: 120px; resize: vertical; line-height: 1.45; }
+  #script { min-height: 320px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
   .row > div { flex: 1 1 200px; }
-  .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 15px; }
-  .check input { width: 20px; height: 20px; }
+  .check { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .check input { width: 22px; height: 22px; flex: none; }
+  .check label { margin: 0; font-size: 16px; color: var(--text); }
   button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 14px 18px;
            min-height: 48px; cursor: pointer; }
   .primary { background: var(--accent); color: var(--accent-text); width: 100%; }
@@ -44,46 +47,70 @@
   #status.err { color: var(--err); }
   audio { width: 100%; margin-top: 4px; }
   a.dl { display: inline-block; margin-top: 10px; color: var(--accent); }
+  .chapters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .chapters button { padding: 8px 12px; min-height: 40px; font-size: 15px; }
   .note { font-size: 13px; color: var(--muted); margin-top: 8px; }
   .hidden { display: none; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Daily AI Brief</h1>
+  <h1>Daily AI Audio</h1>
   <p class="sub" id="today"></p>
 
   <div class="card">
-    <button class="primary" id="goBtn">Make today's brief</button>
+    <button class="primary" id="goBtn">Make my episode</button>
     <p id="status"></p>
     <div id="player" class="hidden">
       <audio id="audio" controls playsinline></audio>
+      <div class="chapters" id="chapters"></div>
       <a class="dl" id="dl" download>Save audio file</a>
     </div>
   </div>
 
   <div class="card">
-    <label for="script">Script (you can edit it, then tap "Voice this text")</label>
-    <textarea id="script" placeholder="The script appears here."></textarea>
+    <h2>What to include</h2>
+    <div class="check"><input type="checkbox" id="fmt_brief"><label for="fmt_brief">News brief (about 2 minutes, one voice)</label></div>
+    <div class="check"><input type="checkbox" id="fmt_dossier"><label for="fmt_dossier">Dossier (6 to 7 minutes, two hosts, one topic in depth)</label></div>
+    <div class="check"><input type="checkbox" id="fmt_debate"><label for="fmt_debate">Debate (4 to 5 minutes, two characters, one issue)</label></div>
+    <div class="row">
+      <div><label for="topicDossier">Dossier topic (optional)</label>
+        <input type="text" id="topicDossier" placeholder="Empty: it picks the biggest story"></div>
+      <div><label for="topicDebate">Debate topic (optional)</label>
+        <input type="text" id="topicDebate" placeholder="Empty: it picks a live controversy"></div>
+    </div>
+    <p class="note">Everything selected is joined into one audio file, with chapter buttons to jump between parts.</p>
+  </div>
+
+  <div class="card">
+    <h2>My news sources</h2>
+    <label for="sources">One per line: a website, a feed or newsletter URL, or an outlet name. Saved on this device.</label>
+    <textarea id="sources" placeholder="https://www.theverge.com/ai-artificial-intelligence&#10;https://www.anthropic.com/news&#10;Ars Technica"></textarea>
+    <p class="note">These are read first and given priority. Google Search still covers the rest of the news.</p>
+  </div>
+
+  <div class="card">
+    <label for="script">Scripts (editable, then tap "Voice this text")</label>
+    <textarea id="script" placeholder="The scripts appear here."></textarea>
     <div class="actions">
-      <button class="secondary" id="writeBtn">Write script only</button>
+      <button class="secondary" id="writeBtn">Write scripts only</button>
       <button class="secondary" id="voiceBtn">Voice this text</button>
     </div>
   </div>
 
   <div class="card">
+    <h2>Settings</h2>
     <label for="key">Google API key</label>
     <input type="password" id="key" placeholder="Paste your Gemini API key" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <div class="check"><input type="checkbox" id="remember" checked><label for="remember" style="margin:0">Remember on this device</label></div>
-    <div class="row" style="margin-top:14px">
-      <div>
-        <label for="voice">Voice</label>
-        <select id="voice">
-          <option>Charon</option><option>Kore</option><option>Puck</option>
-          <option>Zephyr</option><option>Sulafat</option><option>Schedar</option>
-          <option>Achird</option><option>Sadaltager</option>
-        </select>
-      </div>
+    <div class="check"><input type="checkbox" id="remember"><label for="remember">Remember on this device</label></div>
+    <div class="row">
+      <div><label for="vBrief">Brief voice</label><select id="vBrief"></select></div>
+      <div><label for="vDosA">Dossier host Alex</label><select id="vDosA"></select></div>
+      <div><label for="vDosB">Dossier host Sam</label><select id="vDosB"></select></div>
+      <div><label for="vDebA">Debate: Rae</label><select id="vDebA"></select></div>
+      <div><label for="vDebB">Debate: Cole</label><select id="vDebB"></select></div>
+    </div>
+    <div class="row">
       <div>
         <label for="model">TTS model</label>
         <select id="model">
@@ -91,8 +118,6 @@
           <option value="gemini-3.8-flash-lite-tts">Gemini 3.8 Flash-Lite TTS (cheaper)</option>
         </select>
       </div>
-    </div>
-    <div class="row" style="margin-top:14px">
       <div>
         <label for="textModel">Script model (uses Google Search)</label>
         <input type="text" id="textModel" value="gemini-3.8-flash">
@@ -106,40 +131,58 @@
 <script>
 const API = "https://generativelanguage.googleapis.com/v1beta/models/";
 const SAMPLE_RATE = 24000;
-const STYLE = "clear, steady, neutral news delivery";
+const STYLE_BRIEF = "clear, steady, neutral news delivery";
+const STYLE_DOSSIER = "warm, curious, conversational";
+const STYLE_DEBATE = { Rae: "assertive, fast, passionate", Cole: "dry, firm, skeptical" };
+const DOSSIER_SPK = ["Alex", "Sam"];
+const DEBATE_SPK = ["Rae", "Cole"];
+const VOICES = ["Charon", "Kore", "Puck", "Zephyr", "Sulafat", "Schedar", "Achird", "Sadaltager", "Fenrir", "Aoede", "Leda", "Orus"];
 const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// Settings
-function load(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } }
-function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
-$("key").value = load("gemini_key", "");
-$("voice").value = load("voice", "Charon");
-$("model").value = load("tts_model", "gemini-3.8-flash-tts");
-$("textModel").value = load("text_model", "gemini-3.8-flash");
+// ---------- Settings ----------
+const DEFAULTS = {
+  fmt_brief: true, fmt_dossier: false, fmt_debate: false, remember: true,
+  vBrief: "Charon", vDosA: "Kore", vDosB: "Charon", vDebA: "Zephyr", vDebB: "Puck",
+  model: "gemini-3.8-flash-tts", textModel: "gemini-3.8-flash", sources: "", topicDossier: "", topicDebate: ""
+};
+function load(k) { try { return localStorage.getItem("aiaudio_" + k); } catch (e) { return null; } }
+function save(k, v) { try { localStorage.setItem("aiaudio_" + k, v); } catch (e) {} }
+["vBrief", "vDosA", "vDosB", "vDebA", "vDebB"].forEach(id => {
+  $(id).innerHTML = VOICES.map(v => `<option>${v}</option>`).join("");
+});
+// Reuse the key saved by the first version of the page, if any
+const oldKey = (() => { try { return localStorage.getItem("gemini_key"); } catch (e) { return null; } })();
+for (const [id, def] of Object.entries(DEFAULTS)) {
+  const el = $(id), saved = load(id);
+  if (el.type === "checkbox") el.checked = saved === null ? def : saved === "1";
+  else el.value = saved === null ? def : saved;
+}
+$("key").value = load("key") || oldKey || "";
+$("remember").checked = load("remember") === null ? true : load("remember") === "1";
 $("today").textContent = new Date().toLocaleDateString(undefined,
   { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
 function persist() {
-  if ($("remember").checked) save("gemini_key", $("key").value.trim());
-  else { try { localStorage.removeItem("gemini_key"); } catch (e) {} }
-  save("voice", $("voice").value);
-  save("tts_model", $("model").value);
-  save("text_model", $("textModel").value.trim());
+  for (const id of Object.keys(DEFAULTS)) {
+    const el = $(id);
+    save(id, el.type === "checkbox" ? (el.checked ? "1" : "0") : el.value);
+  }
+  if ($("remember").checked) save("key", $("key").value.trim());
+  else { try { localStorage.removeItem("aiaudio_key"); } catch (e) {} }
 }
+// Save sources as you type
+$("sources").addEventListener("input", () => save("sources", $("sources").value));
 
-function status(msg, isErr) {
-  const s = $("status");
-  s.textContent = msg;
-  s.className = isErr ? "err" : "";
-}
+function status(msg, isErr) { const s = $("status"); s.textContent = msg; s.className = isErr ? "err" : ""; }
 function busy(b) { ["goBtn", "writeBtn", "voiceBtn", "testBtn"].forEach(id => $(id).disabled = b); }
 function needKey() {
   const k = $("key").value.trim();
-  if (!k) throw new Error("Paste your Google API key in the settings card first.");
+  if (!k) throw new Error("Paste your Google API key in Settings first.");
   return k;
 }
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// ---------- API ----------
 async function callGemini(model, body, key, step) {
   let lastErr;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -154,56 +197,135 @@ async function callGemini(model, body, key, step) {
       lastErr = new Error(step + " failed. Google API " + res.status + ": " + txt.slice(0, 300));
       if (res.status !== 429 && res.status < 500) break;
     } catch (e) {
-      // Network level failure (Safari reports it as "Load failed")
       lastErr = new Error(step + " failed before Google replied (" + (e.message || e) + "). " +
         "Page address: " + location.protocol + "//" + (location.host || "local file") + ". " +
-        "Try Test connection, keep this tab open while it runs, and turn off content blockers for this page.");
+        "Try Test connection and keep this screen open while it runs.");
     }
     await sleep(1500 * (attempt + 1));
   }
   throw lastErr;
 }
 
-// Step 1: write the script with Google Search grounding
-async function writeScript() {
-  const key = needKey();
-  const today = new Date().toLocaleDateString("en-US",
-    { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const prompt = `Write a spoken news brief about the most important AI news from the last 24 to 48 hours.
-Today is ${today}.
+function cleanText(t) {
+  return t.replace(/[*#`]/g, "").replace(/\u2014/g, ", ").replace(/\n{3,}/g, "\n\n").trim();
+}
 
+async function generateText(prompt, step) {
+  const key = needKey();
+  const model = $("textModel").value.trim();
+  const hasUrls = /https?:\/\//.test($("sources").value);
+  const base = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+  let data;
+  try {
+    data = await callGemini(model, { ...base,
+      tools: hasUrls ? [{ google_search: {} }, { url_context: {} }] : [{ google_search: {} }] }, key, step);
+  } catch (e) {
+    if (hasUrls && /Google API 400/.test(e.message)) {
+      data = await callGemini(model, { ...base, tools: [{ google_search: {} }] }, key, step);
+    } else throw e;
+  }
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const text = parts.map(p => p.text || "").join("").trim();
+  if (!text) throw new Error(step + ": the script model returned no text.");
+  return cleanText(text);
+}
+
+// ---------- Prompts ----------
+function todayLong() {
+  return new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+}
+function sourcesBlock() {
+  const s = $("sources").value.trim();
+  if (!s) return "";
+  return `\nThe listener's own sources, one per line (URLs or outlet names):\n${s}\nRead the URLs and give stories from these sources priority. Also use Google Search for other major news.\n`;
+}
+const DIALOGUE_RULES = `- Use Google Search. Use only facts you found in sources. Say "reportedly" for unconfirmed claims, and say so when sources disagree or details are unknown.
+- Name the outlet for key claims in speech, for example "according to Reuters".
+- Plain conversational English. Short turns of one to four sentences. Natural turn-taking.
+- Spell out numbers and symbols the way a person would say them.
+- No markdown, no em dashes, no stage directions, no sound tags, no bracketed text.`;
+
+function promptBrief() {
+  return `Write a spoken news brief about the most important AI news from the last 24 to 48 hours.
+Today is ${todayLong()}.
+${sourcesBlock()}
 Rules:
 - Use Google Search. Only include facts you found in sources, and say "reportedly" where a claim is unconfirmed.
-- Open with: "This is your AI news brief for ${today}."
+- Open with: "This is your AI news brief for ${todayLong()}."
 - 5 to 6 stories, about 350 words total, plain spoken English.
 - One paragraph per story, separated by a blank line. End each story paragraph with <short pause>.
 - Spell out numbers and symbols the way a person would say them.
 - No markdown, no bullet points, no headings, no em dashes, no stage directions other than <short pause>.
 - Close with: "That's the brief."
 Return only the script text.`;
-  const data = await callGemini($("textModel").value.trim(), {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    tools: [{ google_search: {} }]
-  }, key, "Writing the script");
-  const parts = data.candidates?.[0]?.content?.parts || [];
-  let text = parts.map(p => p.text || "").join("").trim();
-  if (!text) throw new Error("The script model returned no text.");
-  text = text.replace(/[*#`]/g, "").replace(/\u2014/g, ", ").replace(/\n{3,}/g, "\n\n");
-  $("script").value = text;
-  return text;
+}
+function promptDossier(topic) {
+  return `Write a two-host audio dossier that helps a listener understand one topic in depth. Today is ${todayLong()}.
+Hosts: Alex leads and explains. Sam asks sharp questions, pushes back, and checks the logic.
+Topic: ${topic || "choose the single AI story or theme from the last week that most deserves a deep explanation."}
+${sourcesBlock()}
+Length: 900 to 1100 words of dialogue.
+Cover, without labeling sections: what happened, the background, how it works, who is affected, what is uncertain, and what to watch next.
+Rules:
+${DIALOGUE_RULES}
+Format: the first line is exactly "TOPIC: <short title>", then a blank line, then each turn on its own line as "Alex: ..." or "Sam: ...". Alex opens by welcoming the listener to today's dossier and giving the date. End with a short two-sentence recap by Alex.`;
+}
+function promptDebate(topic, covered) {
+  return `Write a debate between two characters with strong opinions on a current AI issue. Today is ${todayLong()}.
+Characters: Rae and Cole take opposing sides. Rae is a fast-talking pragmatist. Cole is a dry skeptic. They are sharp and passionate, they interrupt each other now and then, and they refuse to give away easy points. They attack the ideas, never each other personally.
+Issue: ${topic || "pick a genuinely contested question raised by AI news in the last week, one where informed people disagree." + (covered ? " Avoid this topic, already covered: " + covered + "." : "")}
+${sourcesBlock()}
+Length: 600 to 800 words of dialogue.
+Rules:
+${DIALOGUE_RULES}
+- Give both sides the strongest real arguments, grounded in facts you found. Do not invent quotes from real people or invent statistics.
+- Do not declare a winner. End with each character giving a one-sentence final position.
+Format: the first line is exactly "TOPIC: <the question as a short title>", then a blank line, then each turn on its own line as "Rae: ..." or "Cole: ...". Rae opens by stating the question and her side.`;
+}
+function splitTopic(text) {
+  const m = text.match(/^\s*TOPIC:\s*(.+)$/mi);
+  if (!m) return { topic: "", body: text };
+  return { topic: m[1].trim(), body: text.replace(m[0], "").trim() };
 }
 
-// Step 2: voice it, one paragraph per call, join into one WAV
+// ---------- Step 1: write scripts ----------
+function selected() {
+  return ["brief", "dossier", "debate"].filter(f => $("fmt_" + f).checked);
+}
+async function writeScripts() {
+  const sel = selected();
+  if (!sel.length) throw new Error("Pick at least one format under What to include.");
+  const sections = [];
+  let dossierTopic = "";
+  for (const f of sel) {
+    status("Writing the " + f + " (searching the news, this can take a minute)...");
+    if (f === "brief") {
+      const t = await generateText(promptBrief(), "Writing the brief");
+      sections.push("=== BRIEF ===\n" + t);
+    } else if (f === "dossier") {
+      const r = splitTopic(await generateText(promptDossier($("topicDossier").value.trim()), "Writing the dossier"));
+      dossierTopic = r.topic;
+      sections.push("=== DOSSIER: " + (r.topic || "Deep dive") + " ===\n" + r.body);
+    } else {
+      const r = splitTopic(await generateText(promptDebate($("topicDebate").value.trim(), dossierTopic), "Writing the debate"));
+      sections.push("=== DEBATE: " + (r.topic || "Today's debate") + " ===\n" + r.body);
+    }
+    $("script").value = sections.join("\n\n");
+  }
+  return $("script").value;
+}
+
+// ---------- Step 2: voice ----------
 function b64ToBytes(b64) {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
-function wavFromPcm(chunks) {
-  const gap = new Uint8Array(Math.floor(SAMPLE_RATE * 0.4) * 2);
+const silence = sec => new Uint8Array(Math.floor(SAMPLE_RATE * sec) * 2);
+function wavFromPieces(pieces) {
   let total = 0;
-  chunks.forEach(c => total += c.length + gap.length);
+  pieces.forEach(p => total += p.length);
   const buf = new ArrayBuffer(44 + total);
   const v = new DataView(buf);
   const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
@@ -213,47 +335,151 @@ function wavFromPcm(chunks) {
   v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, total, true);
   const u8 = new Uint8Array(buf);
   let off = 44;
-  chunks.forEach(c => { u8.set(c, off); off += c.length; u8.set(gap, off); off += gap.length; });
+  pieces.forEach(p => { u8.set(p, off); off += p.length; });
   return new Blob([buf], { type: "audio/wav" });
 }
 
-async function voiceScript(text) {
-  const key = needKey();
-  const paragraphs = text.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-  if (!paragraphs.length) throw new Error("There is no script to voice.");
-  const chunks = [];
-  for (let i = 0; i < paragraphs.length; i++) {
-    status(`Voicing paragraph ${i + 1} of ${paragraphs.length}...`);
-    const data = await callGemini($("model").value, {
-      contents: [{ role: "user", parts: [{ text: paragraphs[i], speech_metadata: { style: STYLE } }] }],
-      generationConfig: {
-        responseModalities: ["AUDIO"],
-        responseFormat: { audio: { mimeType: "AUDIO_L16", sampleRate: SAMPLE_RATE } },
-        speechConfig: { voiceConfig: { voice: $("voice").value } }
-      }
-    }, key, "Voicing paragraph " + (i + 1));
-    const b64 = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (!b64) throw new Error("No audio came back for paragraph " + (i + 1) + ".");
-    chunks.push(b64ToBytes(b64));
+function parseSections(text) {
+  const secs = [];
+  let cur = null;
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*===\s*(BRIEF|DOSSIER|DEBATE)\s*(?::\s*(.*?))?\s*===\s*$/i);
+    if (m) { cur = { type: m[1].toLowerCase(), title: (m[2] || "").trim(), lines: [] }; secs.push(cur); }
+    else {
+      if (!cur) { cur = { type: "brief", title: "", lines: [] }; secs.push(cur); }
+      cur.lines.push(line);
+    }
   }
-  const blob = wavFromPcm(chunks);
+  return secs.map(s => ({ ...s, body: s.lines.join("\n").trim() })).filter(s => s.body);
+}
+function parseTurns(body, names) {
+  const turns = [];
+  const re = new RegExp("^\\s*(" + names.join("|") + ")\\s*:\\s*(.*)$", "i");
+  for (const line of body.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    const m = t.match(re);
+    if (m) turns.push({ speaker: names.find(n => n.toLowerCase() === m[1].toLowerCase()), text: m[2].trim() });
+    else if (turns.length) turns[turns.length - 1].text += " " + t;
+  }
+  return turns.filter(t => t.text);
+}
+function chunkTurns(turns) {
+  const out = [];
+  let cur = [], len = 0;
+  for (const t of turns) {
+    if (cur.length && (cur.length >= 8 || len + t.text.length > 1400)) { out.push(cur); cur = []; len = 0; }
+    cur.push(t); len += t.text.length;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+async function tts(parts, speechConfig, step) {
+  const data = await callGemini($("model").value, {
+    contents: [{ role: "user", parts }],
+    generationConfig: {
+      responseModalities: ["AUDIO"],
+      responseFormat: { audio: { mimeType: "AUDIO_L16", sampleRate: SAMPLE_RATE } },
+      speechConfig
+    }
+  }, needKey(), step);
+  const b64 = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+  if (!b64) throw new Error(step + ": no audio came back.");
+  return b64ToBytes(b64);
+}
+function multiConfig(names, voices) {
+  return { multiSpeakerVoiceConfig: { speakerVoiceConfigs: names.map((n, i) => (
+    { speaker: n, voiceConfig: { prebuiltVoiceConfig: { voiceName: voices[i] } } })) } };
+}
+
+async function voiceScript(text) {
+  needKey();
+  const sections = parseSections(text);
+  if (!sections.length) throw new Error("There is no script to voice.");
+
+  // Build the work list
+  const jobs = [];
+  sections.forEach((s, si) => {
+    if (s.type === "brief") {
+      s.body.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean).forEach(p => jobs.push({ si, kind: "mono", text: p }));
+    } else {
+      const names = s.type === "dossier" ? DOSSIER_SPK : DEBATE_SPK;
+      const turns = parseTurns(s.body, names);
+      if (!turns.length) throw new Error("The " + s.type + " has no lines in the form \"" + names[0] + ": ...\".");
+      chunkTurns(turns).forEach(c => jobs.push({ si, kind: s.type, turns: c, names }));
+    }
+  });
+
+  const pieces = [], chapters = [];
+  let elapsed = 0, lastSi = -1;
+  const add = bytes => { pieces.push(bytes); elapsed += bytes.length / 2 / SAMPLE_RATE; };
+
+  for (let j = 0; j < jobs.length; j++) {
+    const job = jobs[j], s = sections[job.si];
+    if (job.si !== lastSi) {
+      if (lastSi !== -1) add(silence(1.4));
+      const label = s.type === "brief" ? "News brief" : (s.type === "dossier" ? "Dossier" : "Debate") + (s.title ? ": " + s.title : "");
+      chapters.push({ label, start: elapsed });
+      lastSi = job.si;
+    }
+    status(`Voicing part ${j + 1} of ${jobs.length}...`);
+    const step = "Voicing part " + (j + 1);
+    let pcm;
+    if (job.kind === "mono") {
+      pcm = await tts([{ text: job.text, speech_metadata: { style: STYLE_BRIEF } }],
+        { voiceConfig: { voice: $("vBrief").value } }, step);
+      add(pcm); add(silence(0.4));
+    } else {
+      const voices = job.kind === "dossier" ? [$("vDosA").value, $("vDosB").value] : [$("vDebA").value, $("vDebB").value];
+      const parts = job.turns.map(t => ({
+        text: t.text,
+        speech_metadata: { speaker: t.speaker, style: job.kind === "dossier" ? STYLE_DOSSIER : STYLE_DEBATE[t.speaker] }
+      }));
+      pcm = await tts(parts, multiConfig(job.names, voices), step);
+      add(pcm); add(silence(0.3));
+    }
+  }
+
+  const blob = wavFromPieces(pieces);
   const url = URL.createObjectURL(blob);
   const audio = $("audio");
   audio.src = url;
   $("dl").href = url;
-  $("dl").download = "ai-brief-" + new Date().toISOString().slice(0, 10) + ".wav";
+  $("dl").download = "ai-audio-" + new Date().toISOString().slice(0, 10) + ".wav";
+  const fmt = sec => Math.floor(sec / 60) + ":" + String(Math.floor(sec % 60)).padStart(2, "0");
+  const ch = $("chapters");
+  ch.innerHTML = "";
+  if (chapters.length > 1) {
+    chapters.forEach(c => {
+      const b = document.createElement("button");
+      b.className = "secondary";
+      b.textContent = (c.label.length > 40 ? c.label.slice(0, 38) + "..." : c.label) + " (" + fmt(c.start) + ")";
+      b.onclick = () => { audio.currentTime = c.start; audio.play().catch(() => {}); };
+      ch.appendChild(b);
+    });
+  }
   $("player").classList.remove("hidden");
-  status("Ready. Tap play.");
+  status("Ready. Total length " + fmt(elapsed) + ". Tap play.");
   audio.play().catch(() => {});
 }
 
+// ---------- Buttons ----------
 async function run(fn) {
   busy(true);
   try { persist(); await fn(); }
   catch (e) { status(e.message || String(e), true); }
   finally { busy(false); }
 }
-
+$("goBtn").onclick = () => run(async () => {
+  const text = await writeScripts();
+  await voiceScript(text);
+});
+$("writeBtn").onclick = () => run(async () => {
+  await writeScripts();
+  status("Scripts ready. Edit them if you like, then tap Voice this text.");
+});
+$("voiceBtn").onclick = () => run(async () => { await voiceScript($("script").value); });
 $("testBtn").onclick = () => run(async () => {
   const key = needKey();
   status("Testing connection to Google...");
@@ -263,23 +489,11 @@ $("testBtn").onclick = () => run(async () => {
       { headers: { "x-goog-api-key": key } });
   } catch (e) {
     throw new Error("Cannot reach Google from this page (" + (e.message || e) + "). Page address: " +
-      location.protocol + "//" + (location.host || "local file") +
-      ". If this is a file opened from Files or inside Claude, host the page on Netlify or GitHub Pages instead.");
+      location.protocol + "//" + (location.host || "local file") + ".");
   }
   if (res.ok) status("Connection works and the key is accepted.");
   else throw new Error("Google replied " + res.status + ": " + (await res.text()).slice(0, 200));
 });
-$("goBtn").onclick = () => run(async () => {
-  status("Searching the news and writing the script...");
-  const text = await writeScript();
-  await voiceScript(text);
-});
-$("writeBtn").onclick = () => run(async () => {
-  status("Searching the news and writing the script...");
-  await writeScript();
-  status("Script ready. Edit it if you like, then tap Voice this text.");
-});
-$("voiceBtn").onclick = () => run(async () => { await voiceScript($("script").value); });
 </script>
 </body>
 </html>
