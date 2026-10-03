@@ -69,10 +69,18 @@
   </div>
 
   <div class="card">
-    <h2>What to include</h2>
+    <h2>Categories</h2>
+    <div class="check"><input type="checkbox" id="cat_ai"><label for="cat_ai">AI</label></div>
+    <div class="check"><input type="checkbox" id="cat_science"><label for="cat_science">Science</label></div>
+    <p class="note">Tick one or both. They apply to the brief, the dossier and the debate.</p>
+    <h2 style="margin-top:18px">What to include</h2>
     <div class="check"><input type="checkbox" id="fmt_brief"><label for="fmt_brief">News brief (about 2 minutes, one voice)</label></div>
     <div class="check"><input type="checkbox" id="fmt_dossier"><label for="fmt_dossier">Dossier (6 to 7 minutes, two hosts, one topic in depth)</label></div>
     <div class="check"><input type="checkbox" id="fmt_debate"><label for="fmt_debate">Debate (4 to 5 minutes, two characters, one issue)</label></div>
+    <div class="row">
+      <div><label for="nStories">Stories in the brief</label>
+        <select id="nStories"></select></div>
+    </div>
     <div class="row">
       <div><label for="topicDossier">Dossier topic (optional)</label>
         <input type="text" id="topicDossier" placeholder="Empty: it picks the biggest story"></div>
@@ -142,12 +150,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ---------- Settings ----------
 const DEFAULTS = {
-  fmt_brief: true, fmt_dossier: false, fmt_debate: false, remember: true,
+  cat_ai: true, cat_science: false, nStories: "5", fmt_brief: true, fmt_dossier: false, fmt_debate: false, remember: true,
   vBrief: "Charon", vDosA: "Kore", vDosB: "Charon", vDebA: "Zephyr", vDebB: "Puck",
   model: "gemini-3.8-flash-tts", textModel: "gemini-3.8-flash", sources: "", topicDossier: "", topicDebate: ""
 };
 function load(k) { try { return localStorage.getItem("aiaudio_" + k); } catch (e) { return null; } }
 function save(k, v) { try { localStorage.setItem("aiaudio_" + k, v); } catch (e) {} }
+$("nStories").innerHTML = [2, 3, 4, 5, 6, 7, 8, 10, 12].map(n => `<option value="${n}">${n}</option>`).join("");
 ["vBrief", "vDosA", "vDosB", "vDebA", "vDebB"].forEach(id => {
   $(id).innerHTML = VOICES.map(v => `<option>${v}</option>`).join("");
 });
@@ -207,7 +216,7 @@ async function callGemini(model, body, key, step) {
 }
 
 function cleanText(t) {
-  return t.replace(/[*#`]/g, "").replace(/\u2014/g, ", ").replace(/\n{3,}/g, "\n\n").trim();
+  return t.replace(/<[^>]*>/g, "").replace(/[*#`]/g, "").replace(/\u2014/g, ", ").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function extractText(data) {
@@ -270,24 +279,36 @@ const DIALOGUE_RULES = `- Use Google Search. Use only facts you found in sources
 - Spell out numbers and symbols the way a person would say them.
 - No markdown, no em dashes, no stage directions, no sound tags, no bracketed text.`;
 
+function cats() {
+  const c = [];
+  if ($("cat_ai").checked) c.push({ label: "AI", scope: "artificial intelligence (models, products, companies, research, policy, safety)" });
+  if ($("cat_science").checked) c.push({ label: "science", scope: "science (research results, space, health and medicine, climate, physics, biology, technology breakthroughs)" });
+  return c;
+}
+const catLabel = () => cats().map(c => c.label).join(" and ");
+const catScope = () => cats().map(c => c.scope).join(" and ");
+
 function promptBrief() {
-  return `Write a spoken news brief about the most important AI news from the last 24 to 48 hours.
+  const n = parseInt($("nStories").value, 10) || 5;
+  const words = n * 70;
+  const split = cats().length > 1 ? `\n- Split the stories as evenly as possible between ${catLabel()}.` : "";
+  return `Write a spoken news brief about the most important news from the last 24 to 48 hours in: ${catScope()}.
 Today is ${todayLong()}.
 ${sourcesBlock()}
 Rules:
 - Use Google Search. Only include facts you found in sources, and say "reportedly" where a claim is unconfirmed.
-- Open with: "This is your AI news brief for ${todayLong()}."
-- 5 to 6 stories, about 350 words total, plain spoken English.
-- One paragraph per story, separated by a blank line. End each story paragraph with <short pause>.
+- Open with: "This is your ${catLabel()} news brief for ${todayLong()}."
+- Exactly ${n} stories, about ${words} words total, plain spoken English.${split}
+- One paragraph per story, separated by a blank line.
 - Spell out numbers and symbols the way a person would say them.
-- No markdown, no bullet points, no headings, no em dashes, no stage directions other than <short pause>.
+- No markdown, no bullet points, no headings, no em dashes, no tags, no brackets, no stage directions.
 - Close with: "That's the brief."
 Return only the script text.`;
 }
 function promptDossier(topic) {
   return `Write a two-host audio dossier that helps a listener understand one topic in depth. Today is ${todayLong()}.
 Hosts: Alex leads and explains. Sam asks sharp questions, pushes back, and checks the logic.
-Topic: ${topic || "choose the single AI story or theme from the last week that most deserves a deep explanation."}
+Topic: ${topic || "choose the single story or theme in " + catScope() + " from the last week that most deserves a deep explanation."}
 ${sourcesBlock()}
 Length: 900 to 1100 words of dialogue.
 Cover, without labeling sections: what happened, the background, how it works, who is affected, what is uncertain, and what to watch next.
@@ -296,9 +317,9 @@ ${DIALOGUE_RULES}
 Format: the first line is exactly "TOPIC: <short title>", then a blank line, then each turn on its own line as "Alex: ..." or "Sam: ...". Alex opens by welcoming the listener to today's dossier and giving the date. End with a short two-sentence recap by Alex.`;
 }
 function promptDebate(topic, covered) {
-  return `Write a debate between two characters with strong opinions on a current AI issue. Today is ${todayLong()}.
+  return `Write a debate between two characters with strong opinions on a current issue in ${catLabel()}. Today is ${todayLong()}.
 Characters: Rae and Cole take opposing sides. Rae is a fast-talking pragmatist. Cole is a dry skeptic. They are sharp and passionate, they interrupt each other now and then, and they refuse to give away easy points. They attack the ideas, never each other personally.
-Issue: ${topic || "pick a genuinely contested question raised by AI news in the last week, one where informed people disagree." + (covered ? " Avoid this topic, already covered: " + covered + "." : "")}
+Issue: ${topic || "pick a genuinely contested question raised by news in " + catScope() + " in the last week, one where informed people disagree." + (covered ? " Avoid this topic, already covered: " + covered + "." : "")}
 ${sourcesBlock()}
 Length: 600 to 800 words of dialogue.
 Rules:
@@ -320,6 +341,7 @@ function selected() {
 async function writeScripts() {
   const sel = selected();
   if (!sel.length) throw new Error("Pick at least one format under What to include.");
+  if (!cats().length) throw new Error("Pick at least one category (AI or Science).");
   const sections = [];
   let dossierTopic = "";
   for (const f of sel) {
@@ -347,6 +369,8 @@ function b64ToBytes(b64) {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
+// Gemini 3.8 TTS reads the text verbatim, so tags and bracketed notes would be spoken aloud
+const speakable = t => t.replace(/<[^>]*>/g, " ").replace(/\[[^\]]*\]/g, " ").replace(/\s{2,}/g, " ").trim();
 const silence = sec => new Uint8Array(Math.floor(SAMPLE_RATE * sec) * 2);
 function wavFromPieces(pieces) {
   let total = 0;
@@ -387,6 +411,7 @@ function parseTurns(body, names) {
     if (m) turns.push({ speaker: names.find(n => n.toLowerCase() === m[1].toLowerCase()), text: m[2].trim() });
     else if (turns.length) turns[turns.length - 1].text += " " + t;
   }
+  turns.forEach(t => t.text = speakable(t.text));
   return turns.filter(t => t.text);
 }
 function chunkTurns(turns) {
@@ -427,7 +452,7 @@ async function voiceScript(text) {
   const jobs = [];
   sections.forEach((s, si) => {
     if (s.type === "brief") {
-      s.body.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean).forEach(p => jobs.push({ si, kind: "mono", text: p }));
+      s.body.split(/\n\s*\n/).map(p => speakable(p)).filter(Boolean).forEach(p => jobs.push({ si, kind: "mono", text: p }));
     } else {
       const names = s.type === "dossier" ? DOSSIER_SPK : DEBATE_SPK;
       const turns = parseTurns(s.body, names);
@@ -454,7 +479,7 @@ async function voiceScript(text) {
     if (job.kind === "mono") {
       pcm = await tts([{ text: job.text, speech_metadata: { style: STYLE_BRIEF } }],
         { voiceConfig: { voice: $("vBrief").value } }, step);
-      add(pcm); add(silence(0.4));
+      add(pcm); add(silence(0.8));
     } else {
       const voices = job.kind === "dossier" ? [$("vDosA").value, $("vDosB").value] : [$("vDebA").value, $("vDebB").value];
       const parts = job.turns.map(t => ({
