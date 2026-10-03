@@ -92,9 +92,12 @@
 
   <div class="card">
     <h2>My news sources</h2>
-    <label for="sources">One per line: a website, a feed or newsletter URL, or an outlet name. Saved on this device.</label>
-    <textarea id="sources" placeholder="https://www.theverge.com/ai-artificial-intelligence&#10;https://www.anthropic.com/news&#10;Ars Technica"></textarea>
-    <p class="note">These are read first and given priority. Google Search still covers the rest of the news.</p>
+    <p class="note" style="margin-top:0">One per line: a website, a feed or newsletter URL, or an outlet name. Saved on this device. Only the lists for the categories you tick are used.</p>
+    <label for="sourcesAI" style="margin-top:12px">AI sources</label>
+    <textarea id="sourcesAI" placeholder="https://www.theverge.com/ai-artificial-intelligence&#10;https://www.anthropic.com/news&#10;Ars Technica"></textarea>
+    <label for="sourcesScience" style="margin-top:12px">Science sources</label>
+    <textarea id="sourcesScience" placeholder="https://www.nature.com/news&#10;https://www.sciencedaily.com&#10;New Scientist"></textarea>
+    <p class="note">These are read first and given priority for their category. Google Search still covers the rest of the news.</p>
   </div>
 
   <div class="card">
@@ -152,7 +155,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const DEFAULTS = {
   cat_ai: true, cat_science: false, nStories: "5", fmt_brief: true, fmt_dossier: false, fmt_debate: false, remember: true,
   vBrief: "Charon", vDosA: "Kore", vDosB: "Charon", vDebA: "Zephyr", vDebB: "Puck",
-  model: "gemini-3.8-flash-tts", textModel: "gemini-3.8-flash", sources: "", topicDossier: "", topicDebate: ""
+  model: "gemini-3.8-flash-tts", textModel: "gemini-3.8-flash", sourcesAI: "", sourcesScience: "", topicDossier: "", topicDebate: ""
 };
 function load(k) { try { return localStorage.getItem("aiaudio_" + k); } catch (e) { return null; } }
 function save(k, v) { try { localStorage.setItem("aiaudio_" + k, v); } catch (e) {} }
@@ -167,6 +170,7 @@ for (const [id, def] of Object.entries(DEFAULTS)) {
   if (el.type === "checkbox") el.checked = saved === null ? def : saved === "1";
   else el.value = saved === null ? def : saved;
 }
+if (load("sourcesAI") === null && load("sources")) $("sourcesAI").value = load("sources");
 $("key").value = load("key") || oldKey || "";
 $("remember").checked = load("remember") === null ? true : load("remember") === "1";
 $("today").textContent = new Date().toLocaleDateString(undefined,
@@ -181,7 +185,7 @@ function persist() {
   else { try { localStorage.removeItem("aiaudio_key"); } catch (e) {} }
 }
 // Save sources as you type
-$("sources").addEventListener("input", () => save("sources", $("sources").value));
+["sourcesAI", "sourcesScience"].forEach(id => $(id).addEventListener("input", () => save(id, $(id).value)));
 
 function status(msg, isErr) { const s = $("status"); s.textContent = msg; s.className = isErr ? "err" : ""; }
 function busy(b) { ["goBtn", "writeBtn", "voiceBtn", "testBtn"].forEach(id => $(id).disabled = b); }
@@ -233,7 +237,7 @@ function diagnose(data) {
 async function generateText(prompt, step) {
   const key = needKey();
   const model = $("textModel").value.trim();
-  const hasUrls = /https?:\/\//.test($("sources").value);
+  const hasUrls = /https?:\/\//.test(sourcesBlock());
   const body = (tools, extra) => ({
     contents: [{ role: "user", parts: [{ text: prompt + (extra || "") }] }],
     tools,
@@ -269,9 +273,12 @@ function todayLong() {
   return new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 }
 function sourcesBlock() {
-  const s = $("sources").value.trim();
-  if (!s) return "";
-  return `\nThe listener's own sources, one per line (URLs or outlet names):\n${s}\nRead the URLs and give stories from these sources priority. Also use Google Search for other major news.\n`;
+  const lists = [];
+  if ($("cat_ai").checked && $("sourcesAI").value.trim()) lists.push("AI sources:\n" + $("sourcesAI").value.trim());
+  if ($("cat_science").checked && $("sourcesScience").value.trim()) lists.push("Science sources:\n" + $("sourcesScience").value.trim());
+  if (!lists.length) return "";
+  return "\nThe listener's own sources by category (URLs or outlet names):\n" + lists.join("\n\n") +
+    "\nRead the URLs and give stories from these sources priority, each list for its own category only. Also use Google Search for other major news.\n";
 }
 const DIALOGUE_RULES = `- Use Google Search. Use only facts you found in sources. Say "reportedly" for unconfirmed claims, and say so when sources disagree or details are unknown.
 - Name the outlet for key claims in speech, for example "according to Reuters".
