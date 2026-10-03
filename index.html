@@ -377,7 +377,7 @@ function b64ToBytes(b64) {
   return out;
 }
 // Gemini 3.8 TTS reads the text verbatim, so tags and bracketed notes would be spoken aloud
-const speakable = t => t.replace(/<[^>]*>/g, " ").replace(/\[[^\]]*\]/g, " ").replace(/\s{2,}/g, " ").trim();
+const speakable = t => t.replace(/<[^>]*>/g, " ").replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim();
 const silence = sec => new Uint8Array(Math.floor(SAMPLE_RATE * sec) * 2);
 function wavFromPieces(pieces) {
   let total = 0;
@@ -409,14 +409,20 @@ function parseSections(text) {
   return secs.map(s => ({ ...s, body: s.lines.join("\n").trim() })).filter(s => s.body);
 }
 function parseTurns(body, names) {
-  const turns = [];
-  const re = new RegExp("^\\s*(" + names.join("|") + ")\\s*:\\s*(.*)$", "i");
-  for (const line of body.split("\n")) {
-    const t = line.trim();
-    if (!t) continue;
-    const m = t.match(re);
-    if (m) turns.push({ speaker: names.find(n => n.toLowerCase() === m[1].toLowerCase()), text: m[2].trim() });
-    else if (turns.length) turns[turns.length - 1].text += " " + t;
+  // Find every "Name:" or "Name (note):" marker, wherever it appears, and take the text up to the next one
+  const re = new RegExp("(?:^|\\s)(?:(?:Host|Speaker|Character)\\s+)?(" + names.join("|") + ")\\s*(?:\\([^)]*\\))?\\s*:", "gi");
+  const marks = [...body.matchAll(re)];
+  let turns = [];
+  if (marks.length) {
+    marks.forEach((m, i) => {
+      const start = m.index + m[0].length;
+      const end = i + 1 < marks.length ? marks[i + 1].index : body.length;
+      turns.push({ speaker: names.find(n => n.toLowerCase() === m[1].toLowerCase()), text: body.slice(start, end).trim() });
+    });
+  } else {
+    // No labels at all: treat each non-empty line as a turn and alternate the speakers
+    body.split("\n").map(l => l.trim()).filter(Boolean).forEach((l, i) =>
+      turns.push({ speaker: names[i % 2], text: l }));
   }
   turns.forEach(t => t.text = speakable(t.text));
   return turns.filter(t => t.text);
@@ -463,7 +469,7 @@ async function voiceScript(text) {
     } else {
       const names = s.type === "dossier" ? DOSSIER_SPK : DEBATE_SPK;
       const turns = parseTurns(s.body, names);
-      if (!turns.length) throw new Error("The " + s.type + " has no lines in the form \"" + names[0] + ": ...\".");
+      if (!turns.length) throw new Error("The " + s.type + " script has no speakable lines. Start of text: " + s.body.slice(0, 160));
       chunkTurns(turns).forEach(c => jobs.push({ si, kind: s.type, turns: c, names }));
     }
   });
