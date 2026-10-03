@@ -234,7 +234,16 @@ function diagnose(data) {
     (c?.finishMessage ? ", " + c.finishMessage : "");
 }
 
-async function generateText(prompt, step) {
+const REMIND = "\n\nIMPORTANT: Output only the final script in exactly the requested format. Do not count words, do not number words, and do not show drafts, plans, notes or analysis.";
+function looksLeaky(t) {
+  return /\w\(\d{1,4}\)/.test(t) || /Total Turn|word count|Sentences:\s*\d/i.test(t) || /^\s*Turn \d+:/mi.test(t);
+}
+function labelRe(names) {
+  return new RegExp("(?:^|\\s)(?:(?:Host|Speaker|Character)\\s+)?(" + names.join("|") + ")\\s*(?:\\([^)]*\\))?\\s*:", "gi");
+}
+const countTurns = (t, names) => [...t.matchAll(labelRe(names))].length;
+
+async function generateText(prompt, step, validate) {
   const key = needKey();
   const model = $("textModel").value.trim();
   const hasUrls = /https?:\/\//.test(sourcesBlock());
@@ -245,14 +254,11 @@ async function generateText(prompt, step) {
   });
   const searchOnly = [{ google_search: {} }];
   const full = hasUrls ? [{ google_search: {} }, { url_context: {} }] : searchOnly;
-  // Try the full toolset, then again, then search only with a stricter reminder
-  const ladder = [
-    body(full), body(full),
-    body(searchOnly, "\n\nReturn only the script text as plain text. Do not return anything else.")
-  ];
+  // Try the full toolset, then again with a stricter reminder, then search only
+  const ladder = [body(full), body(full, REMIND), body(searchOnly, REMIND)];
   let lastDiag = "";
   for (let i = 0; i < ladder.length; i++) {
-    if (i > 0) status("The model returned no text, trying again (" + i + " of " + (ladder.length - 1) + ")...");
+    if (i > 0) status("The script was empty or badly formatted, trying again (" + i + " of " + (ladder.length - 1) + ")...");
     let data;
     try {
       data = await callGemini(model, ladder[i], key, step);
@@ -262,10 +268,13 @@ async function generateText(prompt, step) {
       throw e;
     }
     const text = extractText(data);
-    if (text) return cleanText(text);
-    lastDiag = diagnose(data);
+    if (!text) { lastDiag = diagnose(data); continue; }
+    const cleaned = cleanText(text);
+    if (looksLeaky(cleaned)) { lastDiag = "the model showed its working instead of the script"; continue; }
+    if (validate && !validate(cleaned)) { lastDiag = "the script was not in the requested format"; continue; }
+    return cleaned;
   }
-  throw new Error(step + ": the script model returned no text after 3 tries (" + lastDiag + ").");
+  throw new Error(step + " failed after 3 tries (" + lastDiag + "). Tap the button again.");
 }
 
 // ---------- Prompts ----------
@@ -305,7 +314,7 @@ ${sourcesBlock()}
 Rules:
 - Use Google Search. Only include facts you found in sources, and say "reportedly" where a claim is unconfirmed.
 - Open with: "This is your ${catLabel()} news brief for ${todayLong()}."
-- Exactly ${n} stories, about ${words} words total, plain spoken English.${split}
+- Exactly ${n} stories, roughly ${words} words in total, plain spoken English. Do not count words or show any drafts or notes.${split}
 - One paragraph per story, separated by a blank line.
 - Spell out numbers and symbols the way a person would say them.
 - No markdown, no bullet points, no headings, no em dashes, no tags, no brackets, no stage directions.
@@ -317,7 +326,7 @@ function promptDossier(topic) {
 Hosts: Alex leads and explains. Sam asks sharp questions, pushes back, and checks the logic.
 Topic: ${topic || "choose the single story or theme in " + catScope() + " from the last week that most deserves a deep explanation."}
 ${sourcesBlock()}
-Length: 900 to 1100 words of dialogue.
+Length: about 7 minutes when spoken aloud. Do not count words and do not show any word counts, drafts, plans or notes. Output only the final dialogue.
 Cover, without labeling sections: what happened, the background, how it works, who is affected, what is uncertain, and what to watch next.
 Rules:
 ${DIALOGUE_RULES}
@@ -328,7 +337,7 @@ function promptDebate(topic, covered) {
 Characters: Rae and Cole take opposing sides. Rae is a fast-talking pragmatist. Cole is a dry skeptic. They are sharp and passionate, they interrupt each other now and then, and they refuse to give away easy points. They attack the ideas, never each other personally.
 Issue: ${topic || "pick a genuinely contested question raised by news in " + catScope() + " in the last week, one where informed people disagree." + (covered ? " Avoid this topic, already covered: " + covered + "." : "")}
 ${sourcesBlock()}
-Length: 600 to 800 words of dialogue.
+Length: about 4 to 5 minutes when spoken aloud. Do not count words and do not show any word counts, drafts, plans or notes. Output only the final dialogue.
 Rules:
 ${DIALOGUE_RULES}
 - Give both sides the strongest real arguments, grounded in facts you found. Do not invent quotes from real people or invent statistics.
@@ -354,14 +363,14 @@ async function writeScripts() {
   for (const f of sel) {
     status("Writing the " + f + " (searching the news, this can take a minute)...");
     if (f === "brief") {
-      const t = await generateText(promptBrief(), "Writing the brief");
+      const t = await generateText(promptBrief(), "Writing the brief", t => t.length > 200);
       sections.push("=== BRIEF ===\n" + t);
     } else if (f === "dossier") {
-      const r = splitTopic(await generateText(promptDossier($("topicDossier").value.trim()), "Writing the dossier"));
+      const r = splitTopic(await generateText(promptDossier($("topicDossier").value.trim()), "Writing the dossier", t => countTurns(t, DOSSIER_SPK) >= 8));
       dossierTopic = r.topic;
       sections.push("=== DOSSIER: " + (r.topic || "Deep dive") + " ===\n" + r.body);
     } else {
-      const r = splitTopic(await generateText(promptDebate($("topicDebate").value.trim(), dossierTopic), "Writing the debate"));
+      const r = splitTopic(await generateText(promptDebate($("topicDebate").value.trim(), dossierTopic), "Writing the debate", t => countTurns(t, DEBATE_SPK) >= 6));
       sections.push("=== DEBATE: " + (r.topic || "Today's debate") + " ===\n" + r.body);
     }
     $("script").value = sections.join("\n\n");
@@ -410,7 +419,7 @@ function parseSections(text) {
 }
 function parseTurns(body, names) {
   // Find every "Name:" or "Name (note):" marker, wherever it appears, and take the text up to the next one
-  const re = new RegExp("(?:^|\\s)(?:(?:Host|Speaker|Character)\\s+)?(" + names.join("|") + ")\\s*(?:\\([^)]*\\))?\\s*:", "gi");
+  const re = labelRe(names);
   const marks = [...body.matchAll(re)];
   let turns = [];
   if (marks.length) {
@@ -419,10 +428,6 @@ function parseTurns(body, names) {
       const end = i + 1 < marks.length ? marks[i + 1].index : body.length;
       turns.push({ speaker: names.find(n => n.toLowerCase() === m[1].toLowerCase()), text: body.slice(start, end).trim() });
     });
-  } else {
-    // No labels at all: treat each non-empty line as a turn and alternate the speakers
-    body.split("\n").map(l => l.trim()).filter(Boolean).forEach((l, i) =>
-      turns.push({ speaker: names[i % 2], text: l }));
   }
   turns.forEach(t => t.text = speakable(t.text));
   return turns.filter(t => t.text);
