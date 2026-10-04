@@ -172,6 +172,7 @@
             <strong>Debate</strong><small>4 to 5 minutes, two characters, one issue</small>
           </span></label>
       </div>
+      <div class="check"><input type="checkbox" id="musicOn"><label for="musicOn">Add intro and outro music to the dossier and debate</label></div>
       <p class="note">Everything you pick is joined into one audio file, with buttons to jump between parts.</p>
     </div>
 
@@ -237,7 +238,20 @@
             <input type="text" id="textModel" value="gemini-3.8-flash">
           </div>
         </div>
-        <div class="actions"><button class="secondary" id="testBtn">Test connection</button></div>
+        <div class="row">
+          <div>
+            <label for="musicVol">Music volume</label>
+            <select id="musicVol">
+              <option value="0.3">Soft</option>
+              <option value="0.5">Medium</option>
+              <option value="0.75">Loud</option>
+            </select>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="secondary" id="musicBtn">Preview music</button>
+          <button class="secondary" id="testBtn">Test connection</button>
+        </div>
         <p class="note">Your key is stored only in this browser and sent only to Google's API.</p>
       </div>
     </details>
@@ -258,7 +272,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ---------- Settings ----------
 const DEFAULTS = {
-  cat_ai: true, cat_science: false, nStories: "5", fmt_brief: true, fmt_dossier: false, fmt_debate: false, remember: true,
+  musicOn: true, musicVol: "0.5", cat_ai: true, cat_science: false, nStories: "5", fmt_brief: true, fmt_dossier: false, fmt_debate: false, remember: true,
   vBrief: "Charon", vDosA: "Kore", vDosB: "Charon", vDebA: "Zephyr", vDebB: "Puck",
   model: "gemini-3.8-flash-tts", textModel: "gemini-3.8-flash", sourcesAI: "", sourcesScience: "", topicDossier: "", topicDebate: ""
 };
@@ -494,6 +508,105 @@ function b64ToBytes(b64) {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
+// ---------- Music: synthesised in the browser, no audio files needed ----------
+const jingleCache = {};
+const midi = n => 440 * Math.pow(2, (n - 69) / 12);
+const TAU = Math.PI * 2;
+
+function renderJingle(type, part) {
+  const SR = SAMPLE_RATE;
+  const dur = type === "dossier" ? (part === "intro" ? 7 : 6) : (part === "intro" ? 5 : 4.5);
+  const n = Math.floor(SR * dur);
+  const buf = new Float32Array(n);
+  const mix = (start, len, fn) => {
+    const i0 = Math.floor(start * SR), i1 = Math.min(n, Math.floor((start + len) * SR));
+    for (let i = i0; i < i1; i++) buf[i] += fn((i - i0) / SR);
+  };
+  const pluck = (m, start, amp, decay, len) => {
+    const f = midi(m);
+    mix(start, len || 2.5, t => amp * Math.exp(-t * decay) * Math.min(1, t / 0.004) *
+      (Math.sin(TAU * f * t) + 0.35 * Math.sin(TAU * 2 * f * t) + 0.12 * Math.sin(TAU * 3 * f * t)));
+  };
+  const pad = (notes, start, len, amp) => notes.forEach(m => {
+    const f = midi(m);
+    mix(start, len, t => amp * Math.min(1, t / 1.2) * Math.min(1, (len - t) / 1.0) *
+      (Math.sin(TAU * f * t) + Math.sin(TAU * f * 1.004 * t)));
+  });
+  const bass = (m, start, amp, decay, len) => {
+    const f = midi(m);
+    mix(start, len || 1.2, t => amp * Math.exp(-t * decay) * Math.min(1, t / 0.005) *
+      (Math.sin(TAU * f * t) + 0.4 * Math.sin(TAU * 2 * f * t)));
+  };
+  const kick = (start, amp) => mix(start, 0.4, t => amp * Math.exp(-t * 16) *
+    Math.sin(TAU * (45 * t + 90 * (1 - Math.exp(-35 * t)) / 35)));
+  const hat = (start, amp) => { let prev = 0; mix(start, 0.1, t => {
+    const r = Math.random() * 2 - 1, o = r - prev; prev = r; return amp * Math.exp(-t * 70) * o * 0.5; }); };
+  const stab = (notes, start, amp, decay, len) => notes.forEach(m => {
+    const f = midi(m);
+    mix(start, len || 1.5, t => amp * Math.exp(-t * decay) * Math.min(1, t / 0.003) *
+      (Math.sin(TAU * f * t) + 0.5 * Math.sin(TAU * 2 * f * t) + 0.25 * Math.sin(TAU * 3 * f * t)));
+  });
+  const riser = (start, len, amp) => mix(start, len, t =>
+    amp * (t / len) * Math.sin(TAU * (300 * t + 450 * t * t / len)));
+
+  if (type === "dossier") {
+    const e = 60 / 92 / 2; // eighth note at 92 bpm
+    if (part === "intro") {
+      pad([48, 55, 64, 71], 0, dur, 0.05);
+      const seq = [72, 76, 79, 83, 79, 76, 79, 81, 77, 81, 84, 81, 79, 76, 74, 72];
+      seq.forEach((m, i) => pluck(m, i * e, 0.22, 3.2, 1.6));
+      [[48, 0], [45, 1.3], [41, 2.6], [43, 3.9]].forEach(([m, t]) => bass(m, t, 0.28, 2.5, 1.5));
+      [72, 76, 79, 83].forEach(m => pluck(m, 5.3, 0.2, 1.8, 1.8));
+      bass(48, 5.3, 0.3, 1.4, 1.8);
+    } else {
+      pad([48, 55, 64], 0, dur, 0.05);
+      const seq = [84, 81, 79, 76, 74, 72, 69, 67];
+      seq.forEach((m, i) => pluck(m, i * e * 1.2, 0.2, 3.2, 1.6));
+      [60, 64, 67, 72].forEach(m => pluck(m, 3.4, 0.2, 1.5, 2.4));
+      bass(48, 3.4, 0.3, 1.2, 2.4);
+    }
+  } else {
+    const b = 0.5; // beat at 120 bpm
+    if (part === "intro") {
+      for (let k = 0; k < 8; k++) kick(k * b, 0.8);
+      for (let k = 0; k < 16; k++) { if (k % 2) hat(k * b / 2, 0.25); }
+      const bl = [45, 45, 45, 48, 45, 45, 52, 50, 45, 45, 45, 48, 45, 52, 50, 48];
+      bl.forEach((m, i) => bass(m, i * b / 2, 0.3, 9, 0.25));
+      [1, 2, 3].forEach(t => stab([57, 60, 64], t, 0.1, 10, 0.4));
+      riser(3, 1, 0.12);
+      kick(4, 1); stab([57, 60, 64, 69], 4, 0.2, 2.8, 1.0); bass(33, 4, 0.4, 2.5, 1.0);
+    } else {
+      [0, 0.5, 1, 1.5, 2.5].forEach(t => kick(t, 0.8));
+      stab([57, 60, 64], 0, 0.16, 7, 0.5);
+      stab([55, 59, 62], 0.5, 0.16, 7, 0.5);
+      stab([53, 57, 60], 1, 0.16, 7, 0.5);
+      stab([52, 56, 59], 1.5, 0.16, 7, 0.5);
+      stab([57, 60, 64, 69], 2.5, 0.22, 2.4, 2.0); bass(33, 2.5, 0.4, 2.2, 2.0);
+      for (let k = 0; k < 4; k++) hat(k * b + b / 2, 0.2);
+    }
+  }
+  // Normalise, then fade the edges
+  let peak = 0;
+  for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(buf[i]));
+  const k = peak ? 0.9 / peak : 1;
+  const fin = Math.floor(SR * 0.01), fout = Math.floor(SR * 0.5);
+  for (let i = 0; i < n; i++) {
+    let g = k;
+    if (i < fin) g *= i / fin;
+    if (i > n - fout) g *= (n - i) / fout;
+    buf[i] *= g;
+  }
+  return buf;
+}
+function jingle(type, part) {
+  const key = type + part;
+  if (!jingleCache[key]) jingleCache[key] = renderJingle(type, part);
+  const gain = parseFloat($("musicVol").value) || 0.5;
+  const src = jingleCache[key], out = new Int16Array(src.length);
+  for (let i = 0; i < src.length; i++) out[i] = Math.max(-1, Math.min(1, src[i] * gain)) * 32767;
+  return new Uint8Array(out.buffer);
+}
+
 // Gemini 3.8 TTS reads the text verbatim, so tags and bracketed notes would be spoken aloud
 const speakable = t => t.replace(/<[^>]*>/g, " ").replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim();
 const silence = sec => new Uint8Array(Math.floor(SAMPLE_RATE * sec) * 2);
@@ -591,13 +704,18 @@ async function voiceScript(text) {
   const pieces = [], chapters = [];
   let elapsed = 0, lastSi = -1;
   const add = bytes => { pieces.push(bytes); elapsed += bytes.length / 2 / SAMPLE_RATE; };
+  const music = $("musicOn").checked;
+  const outro = si => {
+    if (music && si !== -1 && sections[si].type !== "brief") { add(silence(0.3)); add(jingle(sections[si].type, "outro")); }
+  };
 
   for (let j = 0; j < jobs.length; j++) {
     const job = jobs[j], s = sections[job.si];
     if (job.si !== lastSi) {
-      if (lastSi !== -1) add(silence(1.4));
+      if (lastSi !== -1) { outro(lastSi); add(silence(1.0)); }
       const label = s.type === "brief" ? "News brief" : (s.type === "dossier" ? "Dossier" : "Debate") + (s.title ? ": " + s.title : "");
       chapters.push({ label, start: elapsed });
+      if (music && s.type !== "brief") { add(jingle(s.type, "intro")); add(silence(0.4)); }
       lastSi = job.si;
     }
     status(`Voicing part ${j + 1} of ${jobs.length}...`);
@@ -618,6 +736,7 @@ async function voiceScript(text) {
     }
   }
 
+  outro(lastSi);
   const blob = wavFromPieces(pieces);
   const url = URL.createObjectURL(blob);
   const audio = $("audio");
@@ -657,6 +776,11 @@ $("writeBtn").onclick = () => run(async () => {
   status("Scripts ready. Edit them if you like, then tap Voice this text.");
 });
 $("voiceBtn").onclick = () => run(async () => { await voiceScript($("script").value); });
+$("musicBtn").onclick = () => {
+  const blob = wavFromPieces([jingle("dossier", "intro"), silence(0.8), jingle("debate", "intro")]);
+  const a = new Audio(URL.createObjectURL(blob));
+  a.play().catch(() => {});
+};
 $("testBtn").onclick = () => run(async () => {
   const key = needKey();
   status("Testing connection to Google...");
