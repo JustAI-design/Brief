@@ -118,6 +118,19 @@
   details[open] > summary::after { transform: rotate(-135deg); }
   .panel { padding: 0 22px 22px; }
   .hidden { display: none; }
+  .player-actions { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
+  .player-actions a.dl { margin-top: 0; }
+  .saveBtn { background: var(--signal); color: var(--signal-ink); padding: 10px 18px; min-height: 42px; font-size: 16px; border-radius: 999px; }
+  .ep { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+        padding: 14px 0; border-top: 1px solid var(--line); }
+  .ep:first-child { border-top: 0; padding-top: 0; }
+  .ep-text { flex: 1 1 220px; min-width: 0; }
+  .ep-text strong { display: block; font: 700 17px/1.25 var(--display); }
+  .ep-text small { display: block; color: var(--muted); font-size: 14px; line-height: 1.35; margin-top: 2px; }
+  .ep-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ep-btns button { padding: 9px 14px; min-height: 40px; font-size: 15px; border-radius: 999px; }
+  .ep-btns .play { background: var(--accent); color: var(--accent-ink); }
+  .ep-btns .secondary { border-width: 1.5px; }
 
   @media (prefers-reduced-motion: reduce) {
     body.working #eq i { animation: none; }
@@ -139,7 +152,10 @@
     <div id="player" class="hidden">
       <audio id="audio" controls playsinline></audio>
       <div class="chapters" id="chapters"></div>
-      <a class="dl" id="dl" download>Save audio file</a>
+      <div class="player-actions">
+        <button class="saveBtn hidden" id="saveBtn">Save to library</button>
+        <a class="dl" id="dl" download>Download file</a>
+      </div>
     </div>
   </section>
 
@@ -188,6 +204,14 @@
   </section>
 
   <section class="drawer">
+    <details id="libraryBox">
+      <summary><span>Library<small id="libSummary">Saved episodes you can replay</small></span></summary>
+      <div class="panel">
+        <div id="libList"></div>
+        <p class="note" id="libNote"></p>
+      </div>
+    </details>
+
     <details id="scriptBox">
       <summary><span>Scripts<small>Read and edit before voicing</small></span></summary>
       <div class="panel">
@@ -738,27 +762,227 @@ async function voiceScript(text) {
 
   outro(lastSi);
   const blob = wavFromPieces(pieces);
-  const url = URL.createObjectURL(blob);
+  lastEpisode = { pieces, chapters, elapsed, script: text, saved: false };
+  showEpisode(blob, chapters, "audio-briefing-" + new Date().toISOString().slice(0, 10) + ".wav", true);
+  status("Ready. Total length " + fmtTime(elapsed) + ". Tap play.");
+  $("audio").play().catch(() => {});
+}
+
+// ---------- Player and library (episodes are kept in this browser's IndexedDB) ----------
+let lastEpisode = null, currentUrl = null;
+const fmtTime = sec => Math.floor(sec / 60) + ":" + String(Math.floor(sec % 60)).padStart(2, "0");
+const mb = bytes => (bytes / 1048576).toFixed(1) + " MB";
+
+function showEpisode(blob, chapters, dlName, canSave) {
+  if (currentUrl) URL.revokeObjectURL(currentUrl);
+  currentUrl = URL.createObjectURL(blob);
   const audio = $("audio");
-  audio.src = url;
-  $("dl").href = url;
-  $("dl").download = "audio-briefing-" + new Date().toISOString().slice(0, 10) + ".wav";
-  const fmt = sec => Math.floor(sec / 60) + ":" + String(Math.floor(sec % 60)).padStart(2, "0");
+  audio.src = currentUrl;
+  $("dl").href = currentUrl;
+  $("dl").download = dlName;
   const ch = $("chapters");
   ch.innerHTML = "";
   if (chapters.length > 1) {
     chapters.forEach(c => {
       const b = document.createElement("button");
       b.className = "secondary";
-      b.textContent = (c.label.length > 40 ? c.label.slice(0, 38) + "..." : c.label) + " (" + fmt(c.start) + ")";
+      b.textContent = (c.label.length > 40 ? c.label.slice(0, 38) + "..." : c.label) + " (" + fmtTime(c.start) + ")";
       b.onclick = () => { audio.currentTime = c.start; audio.play().catch(() => {}); };
       ch.appendChild(b);
     });
   }
+  const sb = $("saveBtn");
+  sb.classList.toggle("hidden", !canSave);
+  sb.disabled = false;
+  sb.textContent = "Save to library";
   $("player").classList.remove("hidden");
-  status("Ready. Total length " + fmt(elapsed) + ". Tap play.");
-  audio.play().catch(() => {});
 }
+
+function openDb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open("audio_briefing", 1);
+    r.onupgradeneeded = () => {
+      r.result.createObjectStore("meta", { keyPath: "id" });
+      r.result.createObjectStore("audio", { keyPath: "id" });
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+const reqP = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+async function dbSave(meta, buf) {
+  const db = await openDb();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(["meta", "audio"], "readwrite");
+    tx.objectStore("meta").put(meta);
+    tx.objectStore("audio").put({ id: meta.id, data: buf });
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+    tx.onabort = () => rej(tx.error || new Error("The browser storage is full."));
+  });
+  db.close();
+}
+async function dbGet(store, id) {
+  const db = await openDb();
+  const v = await reqP(db.transaction(store).objectStore(store).get(id));
+  db.close();
+  return v;
+}
+async function dbAllMeta() {
+  const db = await openDb();
+  const v = await reqP(db.transaction("meta").objectStore("meta").getAll());
+  db.close();
+  return v;
+}
+async function dbDelete(id) {
+  const db = await openDb();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(["meta", "audio"], "readwrite");
+    tx.objectStore("meta").delete(id);
+    tx.objectStore("audio").delete(id);
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+  });
+  db.close();
+}
+
+// MP3 keeps episodes small (about 0.5 MB per minute). Falls back to WAV if the encoder cannot load.
+async function loadLame() {
+  if (window.lamejs) return true;
+  const urls = ["https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js",
+                "https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"];
+  for (const u of urls) {
+    try {
+      await new Promise((res, rej) => {
+        const sc = document.createElement("script");
+        sc.src = u; sc.onload = res; sc.onerror = rej;
+        document.head.appendChild(sc);
+      });
+      if (window.lamejs) return true;
+    } catch (e) {}
+  }
+  return false;
+}
+async function encodeMp3(pieces) {
+  let total = 0;
+  pieces.forEach(p => total += p.length / 2);
+  const pcm = new Int16Array(total);
+  let off = 0;
+  for (const p of pieces) {
+    pcm.set(new Int16Array(p.buffer.slice(p.byteOffset, p.byteOffset + p.length)), off);
+    off += p.length / 2;
+  }
+  const enc = new lamejs.Mp3Encoder(1, SAMPLE_RATE, 64);
+  const out = [];
+  const block = 1152;
+  for (let i = 0, n = 0; i < pcm.length; i += block, n++) {
+    const b = enc.encodeBuffer(pcm.subarray(i, i + block));
+    if (b.length) out.push(new Uint8Array(b));
+    if (n % 300 === 0) { status("Compressing " + Math.round(i / pcm.length * 100) + "%..."); await sleep(0); }
+  }
+  const f = enc.flush();
+  if (f.length) out.push(new Uint8Array(f));
+  return new Blob(out, { type: "audio/mpeg" });
+}
+
+async function saveEpisode() {
+  if (!lastEpisode || lastEpisode.saved) return;
+  const sb = $("saveBtn");
+  sb.disabled = true;
+  busy(true);
+  try {
+    status("Preparing to save...");
+    let blob, ext;
+    if (await loadLame()) { blob = await encodeMp3(lastEpisode.pieces); ext = "mp3"; }
+    else { blob = wavFromPieces(lastEpisode.pieces); ext = "wav"; }
+    const buf = await blob.arrayBuffer();
+    const meta = {
+      id: "ep_" + Date.now(),
+      created: Date.now(),
+      title: new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }),
+      parts: lastEpisode.chapters.map(c => c.label),
+      chapters: lastEpisode.chapters,
+      duration: lastEpisode.elapsed,
+      size: buf.byteLength, type: blob.type, ext,
+      script: lastEpisode.script
+    };
+    await dbSave(meta, buf);
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+    lastEpisode.saved = true;
+    sb.textContent = "Saved";
+    await renderLibrary();
+    status("Saved to the library (" + mb(buf.byteLength) + ", " + ext.toUpperCase() + ").");
+  } catch (e) {
+    sb.disabled = false;
+    status("Could not save: " + (e.message || e), true);
+  } finally {
+    busy(false);
+  }
+}
+
+async function playSaved(id) {
+  const meta = await dbGet("meta", id), rec = await dbGet("audio", id);
+  if (!meta || !rec) { status("That episode is no longer in the library.", true); return renderLibrary(); }
+  const blob = new Blob([rec.data], { type: meta.type });
+  showEpisode(blob, meta.chapters, "audio-briefing-" + new Date(meta.created).toISOString().slice(0, 10) + "." + meta.ext, false);
+  status("Saved episode, " + fmtTime(meta.duration) + ". Tap play.");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  $("audio").play().catch(() => {});
+}
+
+async function renderLibrary() {
+  const list = $("libList");
+  let items = [];
+  try { items = (await dbAllMeta()).sort((a, b) => b.created - a.created); }
+  catch (e) {
+    list.innerHTML = "";
+    $("libNote").textContent = "Saving is not available in this browser (private browsing turns it off).";
+    return;
+  }
+  list.innerHTML = "";
+  $("libSummary").textContent = items.length ? items.length + (items.length === 1 ? " saved episode" : " saved episodes") : "Saved episodes you can replay";
+  if (!items.length) {
+    list.innerHTML = '<p class="note" style="margin:0">Nothing saved yet. After you make an episode, tap Save to library.</p>';
+  }
+  items.forEach(m => {
+    const row = document.createElement("div");
+    row.className = "ep";
+    const text = document.createElement("div");
+    text.className = "ep-text";
+    const t = document.createElement("strong");
+    t.textContent = m.title;
+    const sm = document.createElement("small");
+    sm.textContent = fmtTime(m.duration) + ", " + mb(m.size) + ". " + m.parts.join(", ");
+    text.append(t, sm);
+    const btns = document.createElement("div");
+    btns.className = "ep-btns";
+    const play = document.createElement("button");
+    play.className = "play"; play.textContent = "Play";
+    play.onclick = () => playSaved(m.id);
+    const scr = document.createElement("button");
+    scr.className = "secondary"; scr.textContent = "Script";
+    scr.onclick = () => { $("script").value = m.script || ""; $("scriptBox").open = true; $("scriptBox").scrollIntoView({ behavior: "smooth" }); };
+    const del = document.createElement("button");
+    del.className = "secondary"; del.textContent = "Delete";
+    del.onclick = async () => {
+      if (!confirm("Delete this saved episode?")) return;
+      await dbDelete(m.id);
+      renderLibrary();
+    };
+    btns.append(play, scr, del);
+    row.append(text, btns);
+    list.appendChild(row);
+  });
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const e = await navigator.storage.estimate();
+      $("libNote").textContent = "Stored on this device only. Using " + mb(e.usage || 0) +
+        ". Use the same icon or tab every time: the Home Screen app and Safari keep separate libraries.";
+    }
+  } catch (e) {}
+}
+$("saveBtn").onclick = saveEpisode;
+renderLibrary();
 
 // ---------- Buttons ----------
 async function run(fn) {
