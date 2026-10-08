@@ -131,6 +131,12 @@
   .ep-btns button { padding: 9px 14px; min-height: 40px; font-size: 15px; border-radius: 999px; }
   .ep-btns .play { background: var(--accent); color: var(--accent-ink); }
   .ep-btns .secondary { border-width: 1.5px; }
+  .myvoices { display: flex; flex-wrap: wrap; gap: 8px; }
+  .vchip { display: inline-flex; align-items: center; gap: 8px; background: var(--tint); color: var(--ink);
+           border-radius: 999px; padding: 6px 6px 6px 14px; font-weight: 700; font-size: 15px; }
+  .vchip button { background: var(--surface); color: var(--ink); min-height: 30px; width: 30px; padding: 0;
+                  border-radius: 50%; font-size: 17px; line-height: 1; }
+  #voiceResults .ep { padding: 12px 0; }
 
   @media (prefers-reduced-motion: reduce) {
     body.working #eq i { animation: none; }
@@ -255,6 +261,20 @@
           <div><label for="vDebA">Debate: Rae</label><select id="vDebA"></select></div>
           <div><label for="vDebB">Debate: Cole</label><select id="vDebB"></select></div>
         </div>
+        <div style="margin-top:18px">
+          <label for="voiceQuery">Add a voice from Google's voice library (for example Brio)</label>
+          <div class="row" style="margin-top:0; align-items:stretch">
+            <div style="flex:2 1 220px"><input type="text" id="voiceQuery" placeholder="Search by name or style"></div>
+            <div style="flex:0 0 auto; display:flex; gap:8px; flex-wrap:wrap">
+              <button class="secondary" id="voiceSearchBtn">Search</button>
+              <button class="secondary" id="voiceAddBtn">Add as typed</button>
+            </div>
+          </div>
+          <p class="note" id="voiceMsg"></p>
+          <div id="voiceResults"></div>
+          <div class="label" style="margin-top:12px">My voices</div>
+          <div class="myvoices" id="myVoices"></div>
+        </div>
         <div class="row">
           <div>
             <label for="model">TTS model</label>
@@ -297,7 +317,15 @@ const STYLE_DOSSIER = "warm, curious, conversational";
 const STYLE_DEBATE = { Rae: "assertive, fast, passionate", Cole: "dry, firm, skeptical" };
 const DOSSIER_SPK = ["Alex", "Sam"];
 const DEBATE_SPK = ["Rae", "Cole"];
-const VOICES = ["Charon", "Kore", "Puck", "Zephyr", "Sulafat", "Schedar", "Achird", "Sadaltager", "Fenrir", "Aoede", "Leda", "Orus"];
+// The 30 prebuilt Gemini voices and their one-word character
+const VOICES = [["Zephyr","Bright"],["Puck","Upbeat"],["Charon","Informative"],["Kore","Firm"],["Fenrir","Excitable"],
+  ["Leda","Youthful"],["Orus","Firm"],["Aoede","Breezy"],["Callirrhoe","Easy-going"],["Autonoe","Bright"],
+  ["Enceladus","Breathy"],["Iapetus","Clear"],["Umbriel","Easy-going"],["Algieba","Smooth"],["Despina","Smooth"],
+  ["Erinome","Clear"],["Algenib","Gravelly"],["Rasalgethi","Informative"],["Laomedeia","Upbeat"],["Achernar","Soft"],
+  ["Alnilam","Firm"],["Schedar","Even"],["Gacrux","Mature"],["Pulcherrima","Forward"],["Achird","Friendly"],
+  ["Zubenelgenubi","Casual"],["Vindemiatrix","Gentle"],["Sadachbia","Lively"],["Sadaltager","Knowledgeable"],["Sulafat","Warm"]];
+const PREBUILT = new Set(VOICES.map(v => v[0]));
+const VOICES_API = "https://generativelanguage.googleapis.com/v1beta/voices";
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -310,9 +338,23 @@ const DEFAULTS = {
 function load(k) { try { return localStorage.getItem("aiaudio_" + k); } catch (e) { return null; } }
 function save(k, v) { try { localStorage.setItem("aiaudio_" + k, v); } catch (e) {} }
 $("nStories").innerHTML = [2, 3, 4, 5, 6, 7, 8, 10, 12].map(n => `<option value="${n}">${n}</option>`).join("");
-["vBrief", "vDosA", "vDosB", "vDebA", "vDebB"].forEach(id => {
-  $(id).innerHTML = VOICES.map(v => `<option>${v}</option>`).join("");
-});
+const escAttr = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function getCustomVoices() {
+  try { const v = JSON.parse(load("customVoices") || "null"); if (Array.isArray(v)) return v; } catch (e) {}
+  return [{ id: "Brio", label: "Brio" }];
+}
+function fillVoiceSelects() {
+  const custom = getCustomVoices();
+  const html = VOICES.map(([n, t]) => `<option value="${n}">${n}, ${t.toLowerCase()}</option>`).join("") +
+    (custom.length ? `<optgroup label="My voices">` +
+      custom.map(v => `<option value="${escAttr(v.id)}">${escAttr(v.label)}</option>`).join("") + `</optgroup>` : "");
+  ["vBrief", "vDosA", "vDosB", "vDebA", "vDebB"].forEach(id => {
+    const el = $(id), cur = el.value;
+    el.innerHTML = html;
+    if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
+  });
+}
+fillVoiceSelects();
 // Reuse the key saved by the first version of the page, if any
 const oldKey = (() => { try { return localStorage.getItem("gemini_key"); } catch (e) { return null; } })();
 for (const [id, def] of Object.entries(DEFAULTS)) {
@@ -766,12 +808,21 @@ async function voiceScript(text) {
       add(pcm); add(silence(0.8));
     } else {
       const voices = job.kind === "dossier" ? [$("vDosA").value, $("vDosB").value] : [$("vDebA").value, $("vDebB").value];
-      const parts = job.turns.map(t => ({
-        text: t.text,
-        speech_metadata: { speaker: t.speaker, style: job.kind === "dossier" ? STYLE_DOSSIER : STYLE_DEBATE[t.speaker] }
-      }));
-      pcm = await tts(parts, multiConfig(job.names, voices), step);
-      add(pcm); add(silence(0.3));
+      const styleFor = t => job.kind === "dossier" ? STYLE_DOSSIER : STYLE_DEBATE[t.speaker];
+      if (voices.every(v => PREBUILT.has(v))) {
+        const parts = job.turns.map(t => ({ text: t.text, speech_metadata: { speaker: t.speaker, style: styleFor(t) } }));
+        pcm = await tts(parts, multiConfig(job.names, voices), step);
+        add(pcm); add(silence(0.3));
+      } else {
+        // Library or custom voices: one call per line, which works with any voice ID
+        for (let k = 0; k < job.turns.length; k++) {
+          const t = job.turns[k];
+          status(`Voicing part ${j + 1} of ${jobs.length}, line ${k + 1} of ${job.turns.length}...`);
+          const v = voices[job.names.indexOf(t.speaker)];
+          add(await tts([{ text: t.text, speech_metadata: { style: styleFor(t) } }], { voiceConfig: { voice: v } }, step));
+          add(silence(0.3));
+        }
+      }
     }
   }
 
@@ -1034,6 +1085,75 @@ $("testBtn").onclick = () => run(async () => {
   if (res.ok) status("Connection works and the key is accepted.");
   else throw new Error("Google replied " + res.status + ": " + (await res.text()).slice(0, 200));
 });
+
+// ---------- My voices (library search) ----------
+function saveCustomVoices(list) { save("customVoices", JSON.stringify(list)); }
+function addCustomVoice(v) {
+  const list = getCustomVoices();
+  if (!list.some(x => x.id === v.id)) list.push(v);
+  saveCustomVoices(list);
+  fillVoiceSelects();
+  renderMyVoices();
+}
+function renderMyVoices() {
+  const box = $("myVoices");
+  box.innerHTML = "";
+  const list = getCustomVoices();
+  if (!list.length) { box.innerHTML = '<span class="note" style="margin:0">None yet.</span>'; return; }
+  list.forEach(v => {
+    const chip = document.createElement("span");
+    chip.className = "vchip";
+    chip.append(document.createTextNode(v.label));
+    const x = document.createElement("button");
+    x.textContent = "\u00d7";
+    x.setAttribute("aria-label", "Remove " + v.label);
+    x.onclick = () => { saveCustomVoices(getCustomVoices().filter(y => y.id !== v.id)); fillVoiceSelects(); renderMyVoices(); };
+    chip.append(x);
+    box.appendChild(chip);
+  });
+}
+async function searchVoices() {
+  const q = $("voiceQuery").value.trim();
+  const msg = $("voiceMsg"), out = $("voiceResults");
+  out.innerHTML = "";
+  if (!q) { msg.textContent = "Type a name or a style to search for."; return; }
+  const key = needKey();
+  msg.textContent = "Searching...";
+  const res = await fetch(VOICES_API + "?search=" + encodeURIComponent(q) + "&page_size=20", { headers: { "x-goog-api-key": key } });
+  if (!res.ok) throw new Error("Voice search failed. Google API " + res.status + ": " + (await res.text()).slice(0, 200));
+  const data = await res.json();
+  const voices = data.voices || [];
+  msg.textContent = voices.length
+    ? voices.length + " found. Tap Add to put a voice in your lists."
+    : "No match in the library. If you know the exact voice name or ID, use Add as typed.";
+  voices.forEach(v => {
+    const id = v.id || v.name, name = v.display_name || v.displayName || id;
+    const row = document.createElement("div");
+    row.className = "ep";
+    const text = document.createElement("div");
+    text.className = "ep-text";
+    const t = document.createElement("strong"); t.textContent = name;
+    const sm = document.createElement("small");
+    sm.textContent = [v.language_code || v.languageCode, v.accent, v.gender, v.description].filter(Boolean).join(", ");
+    text.append(t, sm);
+    const add = document.createElement("button");
+    add.className = "play"; add.textContent = "Add";
+    add.onclick = () => { addCustomVoice({ id, label: name === id ? name : name + " (" + id + ")" }); add.textContent = "Added"; add.disabled = true; };
+    const btns = document.createElement("div");
+    btns.className = "ep-btns"; btns.append(add);
+    row.append(text, btns);
+    out.appendChild(row);
+  });
+}
+$("voiceSearchBtn").onclick = () => run(async () => { await searchVoices(); });
+$("voiceAddBtn").onclick = () => {
+  const q = $("voiceQuery").value.trim();
+  if (!q) { $("voiceMsg").textContent = "Type the voice name or ID first."; return; }
+  addCustomVoice({ id: q, label: q });
+  $("voiceMsg").textContent = "Added " + q + " to your voice lists.";
+};
+renderMyVoices();
+["vBrief", "vDosA", "vDosB", "vDebA", "vDebB", "model", "musicVol"].forEach(id => $(id).addEventListener("change", persist));
 
 // ---------- Look and feel ----------
 (function buildEq() {
