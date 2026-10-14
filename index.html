@@ -131,6 +131,15 @@
   .ep-btns button { padding: 9px 14px; min-height: 40px; font-size: 15px; border-radius: 999px; }
   .ep-btns .play { background: var(--accent); color: var(--accent-ink); }
   .ep-btns .secondary { border-width: 1.5px; }
+  .topicBlock { margin-top: 20px; }
+  .inline { display: flex; gap: 10px; }
+  .inline input { flex: 1; min-width: 0; }
+  .inline button { flex: none; min-height: 48px; padding: 0 18px; }
+  .topicBlock .note:empty { display: none; }
+  .suggs { display: grid; gap: 8px; margin-top: 8px; }
+  .sugg { text-align: left; background: var(--bg); color: var(--ink); border: 2px solid var(--line);
+          border-radius: 14px; padding: 12px 14px; font: 500 16px/1.35 var(--body); min-height: 0; }
+  .sugg.on { border-color: var(--accent); background: var(--tint); }
   .myvoices { display: flex; flex-wrap: wrap; gap: 8px; }
   .vchip { display: inline-flex; align-items: center; gap: 8px; background: var(--tint); color: var(--ink);
            border-radius: 999px; padding: 6px 6px 6px 14px; font-weight: 700; font-size: 15px; }
@@ -206,10 +215,24 @@
       <h2>Details</h2>
       <div class="row" style="margin-top:0">
         <div><label for="nStories">Stories in the brief</label><select id="nStories"></select></div>
-        <div><label for="topicDossier">Dossier topic (empty: auto)</label>
-          <input type="text" id="topicDossier" placeholder="Auto-pick"></div>
-        <div><label for="topicDebate">Debate topic (empty: auto)</label>
-          <input type="text" id="topicDebate" placeholder="Auto-pick"></div>
+      </div>
+      <div class="topicBlock">
+        <label for="topicDossier">Dossier topic (empty: auto-pick)</label>
+        <div class="inline">
+          <input type="text" id="topicDossier" placeholder="Type a topic or get suggestions">
+          <button class="secondary" id="suggDossierBtn">Suggest 3</button>
+        </div>
+        <p class="note" id="sugg_dossier_msg"></p>
+        <div class="suggs" id="sugg_dossier"></div>
+      </div>
+      <div class="topicBlock">
+        <label for="topicDebate">Debate topic (empty: auto-pick)</label>
+        <div class="inline">
+          <input type="text" id="topicDebate" placeholder="Type a topic or get suggestions">
+          <button class="secondary" id="suggDebateBtn">Suggest 3</button>
+        </div>
+        <p class="note" id="sugg_debate_msg"></p>
+        <div class="suggs" id="sugg_debate"></div>
       </div>
     </div>
   </section>
@@ -381,7 +404,7 @@ function persist() {
 
 function status(msg, isErr) { const s = $("status"); s.textContent = msg; s.className = isErr ? "err" : ""; }
 function busy(b) {
-  ["goBtn", "writeBtn", "voiceBtn", "testBtn"].forEach(id => $(id).disabled = b);
+  ["goBtn", "writeBtn", "voiceBtn", "testBtn", "suggDossierBtn", "suggDebateBtn"].forEach(id => $(id).disabled = b);
   document.body.classList.toggle("working", b);
 }
 function needKey() {
@@ -1085,6 +1108,64 @@ $("testBtn").onclick = () => run(async () => {
   if (res.ok) status("Connection works and the key is accepted.");
   else throw new Error("Google replied " + res.status + ": " + (await res.text()).slice(0, 200));
 });
+
+// ---------- Topic suggestions ----------
+function promptTopics(kind) {
+  const what = kind === "dossier"
+    ? "topics that deserve a deep explanation of about seven minutes. Each is a concrete story or theme with enough substance to cover the background, how it works, who is affected and what to watch next"
+    : "contested questions that informed people genuinely disagree about, each phrased as a question that can be argued for and against";
+  return `Suggest exactly three current ${what}.
+Today is ${todayLong()}. Draw on news from the last week in: ${catScope()}.
+${sourcesBlock()}
+Rules:
+- Use Google Search. Only suggest things you found in recent news.
+- The three suggestions must be clearly different from each other.
+- Each is one line of at most 14 words, in plain English. No numbering, no bullets, no quotation marks, no explanations.
+- No markdown, no em dashes.
+Return exactly three lines and nothing else.`;
+}
+function parseTopics(text) {
+  return text.split("\n")
+    .map(l => l.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, "").replace(/^["']+|["']+$/g, "").trim())
+    .filter(l => l.length > 3).slice(0, 3);
+}
+async function suggestTopics(kind) {
+  const msg = $("sugg_" + kind + "_msg"), list = $("sugg_" + kind), input = $(kind === "dossier" ? "topicDossier" : "topicDebate");
+  list.innerHTML = "";
+  msg.className = "note";
+  busy(true);
+  try {
+    persist();
+    if ($("cat_custom").checked && !$("customTopic").value.trim()) throw new Error("Type your custom topic, or untick Custom.");
+    if (!cats().length) throw new Error("Pick at least one category.");
+    msg.textContent = "Looking at the latest news...";
+    const text = await generateText(promptTopics(kind), "Finding topics", t => parseTopics(t).length >= 3);
+    const topics = parseTopics(text);
+    msg.textContent = "Tap one to use it.";
+    topics.forEach(t => {
+      const b = document.createElement("button");
+      b.className = "sugg";
+      b.textContent = t;
+      b.onclick = () => {
+        input.value = t;
+        save(input.id, t);
+        [...list.children].forEach(c => c.classList.toggle("on", c === b));
+        msg.textContent = "Selected. You can still edit it.";
+      };
+      list.appendChild(b);
+    });
+  } catch (e) {
+    msg.className = "note";
+    msg.textContent = e.message || String(e);
+    msg.style.color = "var(--err)";
+    return;
+  } finally {
+    busy(false);
+  }
+  msg.style.color = "";
+}
+$("suggDossierBtn").onclick = () => suggestTopics("dossier");
+$("suggDebateBtn").onclick = () => suggestTopics("debate");
 
 // ---------- My voices (library search) ----------
 function saveCustomVoices(list) { save("customVoices", JSON.stringify(list)); }
