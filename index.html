@@ -4,7 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0F1B33">
-<meta name="app-version" content="2.0">
+<meta name="app-version" content="3.0">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Briefing">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Daily Audio Briefing</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -133,6 +139,24 @@
   .dp .btns { display: flex; gap: 8px; flex: none; }
   .dp button { background: rgba(255,255,255,.12); color: var(--console-ink); padding: 8px 16px; min-height: 40px;
                font-size: 15px; border-radius: 999px; }
+  .pcontrols { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .pcontrols button { background: rgba(255,255,255,.1); color: var(--console-ink); padding: 8px 16px; min-height: 42px;
+                      font-size: 15px; border-radius: 999px; font-weight: 700; }
+  .estimate { color: var(--console-muted); font-size: 14px; margin: 10px 2px 0; text-align: center; }
+  .estimate:empty { display: none; }
+  .srcs { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.14); }
+  .srcs summary { cursor: pointer; font: 700 15px var(--body); color: var(--console-muted); padding: 0; display: block; }
+  .srcs summary::after { display: none; }
+  #srcList { display: grid; gap: 6px; margin-top: 10px; }
+  #srcList .src-head { margin-top: 8px; font-size: 13px; color: var(--console-muted); }
+  #srcList a { color: var(--console-ink); font-size: 15px; word-break: break-word; text-decoration: underline;
+               text-decoration-color: rgba(255,255,255,.3); }
+  .ask { margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.14); }
+  .ask .inline input { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.18); color: var(--console-ink); }
+  .ask .inline button { background: rgba(255,255,255,.14); color: var(--console-ink); }
+  .ask-msg { color: var(--console-muted); font-size: 14px; margin: 8px 2px 0; }
+  .ask-msg:empty { display: none; }
+  #answerAudio { margin-top: 10px; }
   .player-actions { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
   .player-actions a.dl { margin-top: 0; }
   .saveBtn { background: var(--signal); color: var(--signal-ink); padding: 10px 18px; min-height: 42px; font-size: 16px; border-radius: 999px; }
@@ -146,6 +170,12 @@
   .ep-btns button { padding: 9px 14px; min-height: 40px; font-size: 15px; border-radius: 999px; }
   .ep-btns .play { background: var(--accent); color: var(--accent-ink); }
   .ep-btns .secondary { border-width: 1.5px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pchip { display: inline-flex; align-items: center; gap: 6px; background: var(--tint); color: var(--ink);
+           padding: 10px 16px; min-height: 44px; border-radius: 999px; font-size: 16px; font-weight: 700; }
+  .pchip.save { background: transparent; border: 2px dashed var(--line); color: var(--muted); }
+  .pchip .x { background: var(--surface); color: var(--ink); width: 26px; height: 26px; min-height: 0; padding: 0;
+              border-radius: 50%; font-size: 15px; line-height: 1; margin-right: -6px; }
   .topicBlock { margin-top: 20px; }
   .inline { display: flex; gap: 10px; }
   .inline input { flex: 1; min-width: 0; }
@@ -182,13 +212,33 @@
   <section class="console" aria-label="Player">
     <div id="eq" aria-hidden="true"></div>
     <button class="go" id="goBtn">Make my episode</button>
+    <p id="estimate" class="estimate"></p>
     <p id="status">Choose what to include below, then tap the button.</p>
     <div id="player" class="hidden">
       <audio id="audio" controls playsinline></audio>
+      <div class="pcontrols">
+        <button id="back15" aria-label="Back 15 seconds">-15s</button>
+        <button id="speedBtn" aria-label="Playback speed">1x</button>
+        <button id="fwd30" aria-label="Forward 30 seconds">+30s</button>
+        <button id="sleepBtn" aria-label="Sleep timer">Sleep: off</button>
+      </div>
       <div class="chapters" id="chapters"></div>
       <div class="deeper hidden" id="deeper">
         <div class="deeper-title">Go deeper on a story</div>
         <div id="deeperList"></div>
+      </div>
+      <details class="srcs hidden" id="srcBox">
+        <summary id="srcSummary">Sources</summary>
+        <div id="srcList"></div>
+      </details>
+      <div class="ask hidden" id="ask">
+        <div class="deeper-title">Ask the hosts</div>
+        <div class="inline">
+          <input type="text" id="askQ" placeholder="Type a question about this episode">
+          <button id="askBtn">Ask</button>
+        </div>
+        <p class="ask-msg" id="askMsg"></p>
+        <audio id="answerAudio" controls playsinline class="hidden"></audio>
       </div>
       <div class="player-actions">
         <button class="saveBtn hidden" id="saveBtn">Save to library</button>
@@ -198,6 +248,12 @@
   </section>
 
   <section class="builder" aria-label="Build your episode">
+    <div class="group">
+      <h2>Presets</h2>
+      <div class="presets" id="presets"></div>
+      <p class="note">Tap one to set up the options below. Save your own with the plus button.</p>
+    </div>
+
     <div class="group">
       <h2>News categories</h2>
       <div class="chips">
@@ -238,6 +294,24 @@
       <h2>Details</h2>
       <div class="row" style="margin-top:0">
         <div><label for="nStories">Stories in the brief</label><select id="nStories"></select></div>
+        <div><label for="language">Language</label>
+          <select id="language">
+            <option value="en-US">English</option><option value="pt-PT">Português (Portugal)</option>
+            <option value="es-ES">Español</option><option value="fr-FR">Français</option>
+            <option value="de-DE">Deutsch</option><option value="it-IT">Italiano</option>
+            <option value="nl-NL">Nederlands</option><option value="ja-JP">日本語</option>
+            <option value="zh-CN">中文 (简体)</option>
+          </select></div>
+        <div><label for="tone">Tone</label>
+          <select id="tone">
+            <option value="neutral">Neutral</option><option value="witty">Witty</option>
+            <option value="serious">Serious</option><option value="warm">Warm and friendly</option>
+          </select></div>
+        <div><label for="level">Level</label>
+          <select id="level">
+            <option value="general">General audience</option><option value="beginner">Beginner</option>
+            <option value="expert">Expert</option>
+          </select></div>
       </div>
       <div class="topicBlock">
         <label for="topicDossier">Dossier topic (empty: auto-pick)</label>
@@ -264,6 +338,7 @@
     <details id="libraryBox">
       <summary><span>Library<small id="libSummary">Saved episodes you can replay</small></span></summary>
       <div class="panel">
+        <button class="secondary" id="reviewBtn" style="width:100%; margin-bottom:14px">Make a week in review</button>
         <div id="libList"></div>
         <p class="note" id="libNote"></p>
       </div>
@@ -384,7 +459,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ---------- Settings ----------
 const DEFAULTS = {
-  memoryOn: true, musicOn: true, musicVol: "0.5", cat_ai: true, cat_science: false, cat_custom: false, customTopic: "", sourcesCustom: "", nStories: "5", fmt_brief: true, fmt_dossier: false, fmt_debate: false, remember: true,
+  language: "en-US", tone: "neutral", level: "general", memoryOn: true, musicOn: true, musicVol: "0.5", cat_ai: true, cat_science: false, cat_custom: false, customTopic: "", sourcesCustom: "", nStories: "5", fmt_brief: true, fmt_dossier: false, fmt_debate: false, remember: true,
   vBrief: "Charon", vDosA: "Kore", vDosB: "Charon", vDebA: "Zephyr", vDebB: "Puck",
   model: "gemini-3.8-flash-tts", textModel: "gemini-3.8-flash", sourcesAI: "", sourcesScience: "", topicDossier: "", topicDebate: ""
 };
@@ -434,7 +509,7 @@ function persist() {
 
 function status(msg, isErr) { const s = $("status"); s.textContent = msg; s.className = isErr ? "err" : ""; }
 function busy(b) {
-  ["goBtn", "writeBtn", "voiceBtn", "testBtn", "suggDossierBtn", "suggDebateBtn"].forEach(id => $(id).disabled = b);
+  ["goBtn", "writeBtn", "voiceBtn", "testBtn", "suggDossierBtn", "suggDebateBtn", "askBtn", "reviewBtn"].forEach(id => $(id).disabled = b);
   document.body.classList.toggle("working", b);
 }
 function needKey() {
@@ -491,6 +566,14 @@ function labelRe(names) {
 }
 const countTurns = (t, names) => [...t.matchAll(labelRe(names))].length;
 
+let lastGrounding = [];
+function collectSources(data) {
+  const c = data.candidates && data.candidates[0], out = [], seen = new Set();
+  const push = (uri, title) => { if (uri && !seen.has(uri)) { seen.add(uri); out.push({ title: title || uri, uri }); } };
+  ((c && c.groundingMetadata && c.groundingMetadata.groundingChunks) || []).forEach(g => g.web && push(g.web.uri, g.web.title));
+  ((c && c.urlContextMetadata && c.urlContextMetadata.urlMetadata) || []).forEach(u => push(u.retrievedUrl || u.retrieved_url));
+  return out;
+}
 async function generateText(prompt, step, validate) {
   const key = needKey();
   const model = $("textModel").value.trim();
@@ -520,14 +603,39 @@ async function generateText(prompt, step, validate) {
     const cleaned = cleanText(text);
     if (looksLeaky(cleaned)) { lastDiag = "the model showed its working instead of the script"; continue; }
     if (validate && !validate(cleaned)) { lastDiag = "the script was not in the requested format"; continue; }
+    lastGrounding = collectSources(data);
     return cleaned;
   }
   throw new Error(step + " failed after 3 tries (" + lastDiag + "). Tap the button again.");
 }
 
 // ---------- Prompts ----------
+const LANGS = { "en-US": "English", "pt-PT": "European Portuguese", "es-ES": "Spanish", "fr-FR": "French", "de-DE": "German",
+  "it-IT": "Italian", "nl-NL": "Dutch", "ja-JP": "Japanese", "zh-CN": "Simplified Chinese" };
+const TONES = {
+  neutral: "", witty: "Tone: light and witty, with occasional dry humor, but never at the expense of accuracy.",
+  serious: "Tone: serious and measured, with no jokes.", warm: "Tone: warm, friendly and encouraging."
+};
+const LEVELS = {
+  general: "", beginner: "Level: assume no background knowledge. Explain jargon in plain words and use everyday comparisons.",
+  expert: "Level: the listener is an expert. Skip the basics, use precise terminology, and focus on what is new, technical or contested."
+};
+function styleClause(kind) {
+  const lang = $("language").value || "en-US", p = [];
+  if (lang !== "en-US") {
+    const name = LANGS[lang];
+    p.push("Write in " + name + ", as natural spoken " + name + (lang === "pt-PT" ? " (European Portuguese vocabulary, spelling and grammar, not Brazilian)" : "") + ".");
+    if (kind === "dialogue") p.push('Keep the speaker labels exactly as given in English, and keep the first line label "TOPIC:" in English, with the title itself in ' + name + ".");
+    if (kind === "brief") p.push("Translate the required opening and closing lines naturally.");
+  }
+  if (kind !== "topics") {
+    if (TONES[$("tone").value]) p.push(TONES[$("tone").value]);
+    if (LEVELS[$("level").value]) p.push(LEVELS[$("level").value]);
+  }
+  return p.length ? "Style:\n" + p.map(x => "- " + x).join("\n") + "\n" : "";
+}
 function todayLong() {
-  return new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  return new Date().toLocaleDateString($("language").value || "en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 }
 function sourcesBlock() {
   const lists = [];
@@ -581,6 +689,7 @@ function rememberEpisode(script) {
   if (!$("memoryOn").checked) return;
   const mem = getMemory(), now = Date.now();
   parseSections(script).forEach(sec => {
+    if (sec.type === "answer" || sec.title === "Week in review") return;
     if (sec.type === "brief") {
       const items = extractStories(sec.body).map(st => {
         const m = st.text.match(/^(.+?[.!?])(\s|$)/);
@@ -611,7 +720,7 @@ function promptBrief() {
   return `Write a spoken news brief about the most important news from the last 24 to 48 hours in: ${catScope()}.
 Today is ${todayLong()}.
 ${sourcesBlock()}${mem}
-Rules:${memRule}
+${styleClause("brief")}Rules:${memRule}
 - Use Google Search. Only include facts you found in sources, and say "reportedly" where a claim is unconfirmed.
 - If a category has too little news in the last 48 hours, widen the window to the last two weeks and say so briefly.
 - Open with: "This is your ${catLabel()} news brief for ${todayLong()}."
@@ -627,7 +736,7 @@ function promptDossier(topic, context) {
 Hosts: Alex leads and explains. Sam asks sharp questions, pushes back, and checks the logic.
 Topic: ${topic || "choose the single story or theme in " + catScope() + " from the last week that most deserves a deep explanation."}
 ${context ? "The listener just heard this story in their news brief and wants to go much deeper on it:\n" + context + "\nCover this story in depth. Go well beyond the summary, and search for fuller and newer reporting on it.\n" : ""}${sourcesBlock()}${memoryBlock() ? memoryBlock() + (topic || context ? "If this connects to something the listener already heard, one host may refer back to it in a single sentence.\n" : "Choose a topic that is not already covered above.\n") : ""}
-Length: about 7 minutes when spoken aloud. Do not count words and do not show any word counts, drafts, plans or notes. Output only the final dialogue.
+${styleClause("dialogue")}Length: about 7 minutes when spoken aloud. Do not count words and do not show any word counts, drafts, plans or notes. Output only the final dialogue.
 Cover, without labeling sections: what happened, the background, how it works, who is affected, what is uncertain, and what to watch next.
 Rules:
 ${DIALOGUE_RULES}
@@ -638,7 +747,7 @@ function promptDebate(topic, covered, context) {
 Characters: Rae and Cole take opposing sides. Rae is a fast-talking pragmatist. Cole is a dry skeptic. They are sharp and passionate, they interrupt each other now and then, and they refuse to give away easy points. They attack the ideas, never each other personally.
 Issue: ${topic || (context ? "derive the single most contested question raised by this story, one where informed people disagree. The listener just heard it in their news brief:\n" + context : "pick a genuinely contested question raised by news in " + catScope() + " in the last week, one where informed people disagree." + (covered ? " Avoid this topic, already covered: " + covered + "." : ""))}
 ${sourcesBlock()}${memoryBlock() ? memoryBlock() + (topic || context ? "If this connects to something the listener already heard, one character may refer back to it in a single sentence.\n" : "Choose a question that is not already covered above.\n") : ""}
-Length: about 4 to 5 minutes when spoken aloud. Do not count words and do not show any word counts, drafts, plans or notes. Output only the final dialogue.
+${styleClause("dialogue")}Length: about 4 to 5 minutes when spoken aloud. Do not count words and do not show any word counts, drafts, plans or notes. Output only the final dialogue.
 Rules:
 ${DIALOGUE_RULES}
 - Give both sides the strongest real arguments, grounded in facts you found. Do not invent quotes from real people or invent statistics.
@@ -655,6 +764,7 @@ function splitTopic(text) {
 function selected() {
   return ["brief", "dossier", "debate"].filter(f => $("fmt_" + f).checked);
 }
+let scriptSources = [];
 async function writeScripts(opts = {}) {
   // opts.only = "dossier" or "debate" writes just that part (used by Go deeper)
   const sel = opts.only ? [opts.only] : selected();
@@ -664,19 +774,23 @@ async function writeScripts(opts = {}) {
     if (!cats().length) throw new Error("Pick at least one category.");
   }
   const sections = [];
+  scriptSources = [];
   let dossierTopic = "";
   for (const f of sel) {
     status("Writing the " + f + " (searching the news, this can take a minute)...");
     if (f === "brief") {
       const t = await generateText(promptBrief(), "Writing the brief", t => t.length > 200);
       sections.push("=== BRIEF ===\n" + t);
+      scriptSources.push({ label: "News brief", items: lastGrounding });
     } else if (f === "dossier") {
       const r = splitTopic(await generateText(promptDossier(opts.topic || $("topicDossier").value.trim(), opts.context), "Writing the dossier", t => countTurns(t, DOSSIER_SPK) >= 8));
       dossierTopic = r.topic;
       sections.push("=== DOSSIER: " + (r.topic || "Deep dive") + " ===\n" + r.body);
+      scriptSources.push({ label: "Dossier: " + (r.topic || "Deep dive"), items: lastGrounding });
     } else {
       const r = splitTopic(await generateText(promptDebate(opts.only ? "" : $("topicDebate").value.trim(), dossierTopic, opts.context), "Writing the debate", t => countTurns(t, DEBATE_SPK) >= 6));
       sections.push("=== DEBATE: " + (r.topic || "Today's debate") + " ===\n" + r.body);
+      scriptSources.push({ label: "Debate: " + (r.topic || "Today's debate"), items: lastGrounding });
     }
     $("script").value = sections.join("\n\n");
     $("scriptBox").open = true;
@@ -813,7 +927,7 @@ function parseSections(text) {
   const secs = [];
   let cur = null;
   for (const line of text.split("\n")) {
-    const m = line.match(/^\s*===\s*(BRIEF|DOSSIER|DEBATE)\s*(?::\s*(.*?))?\s*===\s*$/i);
+    const m = line.match(/^\s*===\s*(BRIEF|DOSSIER|DEBATE|ANSWER)\s*(?::\s*(.*?))?\s*===\s*$/i);
     if (m) { cur = { type: m[1].toLowerCase(), title: (m[2] || "").trim(), lines: [] }; secs.push(cur); }
     else {
       if (!cur) { cur = { type: "brief", title: "", lines: [] }; secs.push(cur); }
@@ -866,10 +980,20 @@ function multiConfig(names, voices) {
     { speaker: n, voiceConfig: { prebuiltVoiceConfig: { voiceName: voices[i] } } })) } };
 }
 
-async function voiceScript(text) {
+function sectionKind(type) { return type === "debate" ? "debate" : "dossier"; }
+function chapterLabel(s) {
+  if (s.type === "brief") return "News brief";
+  const base = s.type === "debate" ? "Debate" : s.type === "answer" ? "Answer" : "Dossier";
+  return base + (s.title ? ": " + s.title : "");
+}
+
+// Turns a script into audio pieces. Used for episodes, answers and reviews.
+async function synthesize(text, opts = {}) {
   needKey();
   const sections = parseSections(text);
   if (!sections.length) throw new Error("There is no script to voice.");
+  const music = opts.music !== undefined ? opts.music : $("musicOn").checked;
+  const hasMusic = s => music && (s.type === "dossier" || s.type === "debate");
 
   // Build the work list
   const jobs = [];
@@ -877,28 +1001,27 @@ async function voiceScript(text) {
     if (s.type === "brief") {
       s.body.split(/\n\s*\n/).map(p => speakable(p)).filter(Boolean).forEach(p => jobs.push({ si, kind: "mono", text: p }));
     } else {
-      const names = s.type === "dossier" ? DOSSIER_SPK : DEBATE_SPK;
+      const kind = sectionKind(s.type);
+      const names = kind === "dossier" ? DOSSIER_SPK : DEBATE_SPK;
       const turns = parseTurns(s.body, names);
       if (!turns.length) throw new Error("The " + s.type + " script has no speakable lines. Start of text: " + s.body.slice(0, 160));
-      chunkTurns(turns).forEach(c => jobs.push({ si, kind: s.type, turns: c, names }));
+      chunkTurns(turns).forEach(c => jobs.push({ si, kind, turns: c, names }));
     }
   });
 
   const pieces = [], chapters = [];
   let elapsed = 0, lastSi = -1;
   const add = bytes => { pieces.push(bytes); elapsed += bytes.length / 2 / SAMPLE_RATE; };
-  const music = $("musicOn").checked;
   const outro = si => {
-    if (music && si !== -1 && sections[si].type !== "brief") { add(silence(0.3)); add(jingle(sections[si].type, "outro")); }
+    if (si !== -1 && hasMusic(sections[si])) { add(silence(0.3)); add(jingle(sections[si].type, "outro")); }
   };
 
   for (let j = 0; j < jobs.length; j++) {
     const job = jobs[j], s = sections[job.si];
     if (job.si !== lastSi) {
       if (lastSi !== -1) { outro(lastSi); add(silence(1.0)); }
-      const label = s.type === "brief" ? "News brief" : (s.type === "dossier" ? "Dossier" : "Debate") + (s.title ? ": " + s.title : "");
-      chapters.push({ label, start: elapsed });
-      if (music && s.type !== "brief") { add(jingle(s.type, "intro")); add(silence(0.4)); }
+      chapters.push({ label: chapterLabel(s), start: elapsed });
+      if (hasMusic(s)) { add(jingle(s.type, "intro")); add(silence(0.4)); }
       lastSi = job.si;
     }
     status(`Voicing part ${j + 1} of ${jobs.length}...`);
@@ -927,13 +1050,18 @@ async function voiceScript(text) {
       }
     }
   }
-
   outro(lastSi);
+  return { pieces, chapters, elapsed };
+}
+
+async function voiceScript(text) {
+  const { pieces, chapters, elapsed } = await synthesize(text);
   const blob = wavFromPieces(pieces);
-  lastEpisode = { pieces, chapters, elapsed, script: text, saved: false };
+  const sources = scriptSources.slice();
+  lastEpisode = { pieces, chapters, elapsed, script: text, sources, saved: false };
   rememberEpisode(text);
-  showEpisode(blob, chapters, "audio-briefing-" + new Date().toISOString().slice(0, 10) + ".wav", true, text);
-  status("Ready. Total length " + fmtTime(elapsed) + ". Tap play.");
+  showEpisode(blob, chapters, "audio-briefing-" + new Date().toISOString().slice(0, 10) + ".wav", true, text, sources);
+  status("Ready. Total length " + fmtTime(elapsed) + ". " + costNote(elapsed));
   $("audio").play().catch(() => {});
 }
 
@@ -942,7 +1070,8 @@ let lastEpisode = null, currentUrl = null;
 const fmtTime = sec => Math.floor(sec / 60) + ":" + String(Math.floor(sec % 60)).padStart(2, "0");
 const mb = bytes => (bytes / 1048576).toFixed(1) + " MB";
 
-function showEpisode(blob, chapters, dlName, canSave, script) {
+let currentScript = "", currentChapters = [];
+function showEpisode(blob, chapters, dlName, canSave, script, sources) {
   if (currentUrl) URL.revokeObjectURL(currentUrl);
   currentUrl = URL.createObjectURL(blob);
   const audio = $("audio");
@@ -964,14 +1093,51 @@ function showEpisode(blob, chapters, dlName, canSave, script) {
   sb.classList.toggle("hidden", !canSave);
   sb.disabled = false;
   sb.textContent = "Save to library";
+  currentScript = script || "";
+  currentChapters = chapters;
   renderDeeper(script);
+  renderSources(sources);
+  $("answerAudio").classList.add("hidden");
+  $("answerAudio").removeAttribute("src");
+  $("askMsg").textContent = "";
+  $("ask").classList.toggle("hidden", !currentScript);
+  applySpeed();
+  setupMediaSession(chapters);
   $("player").classList.remove("hidden");
+}
+
+function renderSources(sources) {
+  const box = $("srcBox"), list = $("srcList");
+  list.innerHTML = "";
+  const groups = (sources || []).filter(g => g.items && g.items.length);
+  const total = groups.reduce((a, g) => a + g.items.length, 0);
+  box.classList.toggle("hidden", !total);
+  $("srcSummary").textContent = "Sources (" + total + ")";
+  groups.forEach(g => {
+    const h = document.createElement("div");
+    h.className = "src-head";
+    h.textContent = g.label;
+    list.appendChild(h);
+    g.items.forEach(it => {
+      const a = document.createElement("a");
+      a.href = it.uri; a.target = "_blank"; a.rel = "noopener";
+      a.textContent = it.title;
+      list.appendChild(a);
+    });
+  });
 }
 
 // ---------- Go deeper: turn each brief story into a dossier or a debate ----------
 function extractStories(body) {
-  return body.split(/\n\s*\n/).map(p => p.trim()).map(p =>
-      p.replace(/^This is your [^.]*news brief for [^.]*\.\s*/i, "").replace(/\s*That'?s the brief\.?\s*$/i, "").trim())
+  const introRe = /^This is your [^.]*news brief for [^.]*\.\s*/i, closeRe = /\s*That'?s the brief\.?\s*$/i;
+  let raw = body.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  const english = raw.some(p => introRe.test(p));
+  if (!english && raw.length >= 3) {
+    // Other languages: the opening line and the closing line are short paragraphs
+    if (raw[0].length < 200) raw = raw.slice(1);
+    if (raw.length && raw[raw.length - 1].length < 120) raw = raw.slice(0, -1);
+  }
+  return raw.map(p => p.replace(introRe, "").replace(closeRe, "").trim())
     .filter(p => p.length > 60)
     .map(p => {
       const m = p.match(/^(.+?[.!?])(\s|$)/);
@@ -1113,7 +1279,8 @@ async function saveEpisode() {
       chapters: lastEpisode.chapters,
       duration: lastEpisode.elapsed,
       size: buf.byteLength, type: blob.type, ext,
-      script: lastEpisode.script
+      script: lastEpisode.script,
+      sources: lastEpisode.sources || []
     };
     await dbSave(meta, buf);
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
@@ -1133,7 +1300,7 @@ async function playSaved(id) {
   const meta = await dbGet("meta", id), rec = await dbGet("audio", id);
   if (!meta || !rec) { status("That episode is no longer in the library.", true); return renderLibrary(); }
   const blob = new Blob([rec.data], { type: meta.type });
-  showEpisode(blob, meta.chapters, "audio-briefing-" + new Date(meta.created).toISOString().slice(0, 10) + "." + meta.ext, false, meta.script);
+  showEpisode(blob, meta.chapters, "audio-briefing-" + new Date(meta.created).toISOString().slice(0, 10) + "." + meta.ext, false, meta.script, meta.sources);
   status("Saved episode, " + fmtTime(meta.duration) + ". Tap play.");
   window.scrollTo({ top: 0, behavior: "smooth" });
   $("audio").play().catch(() => {});
@@ -1237,10 +1404,10 @@ function promptTopics(kind) {
   return `Suggest exactly three current ${what}.
 Today is ${todayLong()}. Draw on news from the last week in: ${catScope()}.
 ${sourcesBlock()}${memoryBlock() ? memoryBlock() + "Do not suggest anything already covered above.\n" : ""}
-Rules:
+${styleClause("topics")}Rules:
 - Use Google Search. Only suggest things you found in recent news.
 - The three suggestions must be clearly different from each other.
-- Each is one line of at most 14 words, in plain English. No numbering, no bullets, no quotation marks, no explanations.
+- Each is one line of at most 14 words, in plain words. No numbering, no bullets, no quotation marks, no explanations.
 - No markdown, no em dashes.
 Return exactly three lines and nothing else.`;
 }
@@ -1356,8 +1523,225 @@ $("voiceAddBtn").onclick = () => {
 renderMyVoices();
 ["vBrief", "vDosA", "vDosB", "vDebA", "vDebB", "model", "musicVol"].forEach(id => $(id).addEventListener("change", persist));
 
+// ---------- Presets ----------
+const BUILTIN_PRESETS = [
+  { name: "Quick brief", fmt: { brief: 1, dossier: 0, debate: 0 }, n: 3 },
+  { name: "Morning commute", fmt: { brief: 1, dossier: 1, debate: 0 }, n: 5 },
+  { name: "Weekend deep dive", fmt: { brief: 0, dossier: 1, debate: 1 } },
+  { name: "Debate night", fmt: { brief: 0, dossier: 0, debate: 1 } }
+];
+function customPresets() {
+  try { const v = JSON.parse(load("presets") || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+}
+function applyPreset(p) {
+  ["brief", "dossier", "debate"].forEach(f => { $("fmt_" + f).checked = !!p.fmt[f]; });
+  if (p.n) $("nStories").value = String(p.n);
+  if (p.cats) {
+    $("cat_ai").checked = !!p.cats.ai; $("cat_science").checked = !!p.cats.science; $("cat_custom").checked = !!p.cats.custom;
+    syncCustom();
+  }
+  if (p.tone) $("tone").value = p.tone;
+  if (p.level) $("level").value = p.level;
+  if (p.language) $("language").value = p.language;
+  persist();
+  updateEstimate();
+}
+function renderPresets() {
+  const box = $("presets");
+  box.innerHTML = "";
+  BUILTIN_PRESETS.forEach(p => {
+    const b = document.createElement("button");
+    b.className = "pchip"; b.textContent = p.name;
+    b.onclick = () => applyPreset(p);
+    box.appendChild(b);
+  });
+  customPresets().forEach((p, i) => {
+    const wrap = document.createElement("span");
+    wrap.className = "pchip";
+    const b = document.createElement("button");
+    b.style.cssText = "background:none;color:inherit;padding:0;min-height:0;font:inherit";
+    b.textContent = p.name;
+    b.onclick = () => applyPreset(p);
+    const x = document.createElement("button");
+    x.className = "x"; x.textContent = "\u00d7"; x.setAttribute("aria-label", "Remove " + p.name);
+    x.onclick = () => {
+      if (!confirm("Remove the preset " + p.name + "?")) return;
+      const list = customPresets(); list.splice(i, 1); save("presets", JSON.stringify(list)); renderPresets();
+    };
+    wrap.append(b, x);
+    box.appendChild(wrap);
+  });
+  const add = document.createElement("button");
+  add.className = "pchip save"; add.textContent = "+ Save current";
+  add.onclick = () => {
+    const name = (prompt("Name this preset") || "").trim();
+    if (!name) return;
+    const list = customPresets();
+    list.push({
+      name: name.slice(0, 30),
+      fmt: { brief: +$("fmt_brief").checked, dossier: +$("fmt_dossier").checked, debate: +$("fmt_debate").checked },
+      n: parseInt($("nStories").value, 10),
+      cats: { ai: $("cat_ai").checked, science: $("cat_science").checked, custom: $("cat_custom").checked },
+      tone: $("tone").value, level: $("level").value, language: $("language").value
+    });
+    save("presets", JSON.stringify(list));
+    renderPresets();
+  };
+  box.appendChild(add);
+}
+
+// ---------- Cost estimate (Google's list prices, October 2026) ----------
+const TTS_RATE = { "gemini-3.8-flash-tts": 9, "gemini-3.8-flash-lite-tts": 6 }; // dollars per million audio tokens
+const SCRIPT_COST = 0.02; // rough cost of one script with Google Search
+function audioCostPerMin() {
+  const factor = Date.now() >= Date.UTC(2027, 0, 1) ? 2 : 1; // Google doubles TTS prices on 1 Jan 2027
+  return (TTS_RATE[$("model").value] || 9) * factor * 1500 / 1e6; // 25 audio tokens per second
+}
+function costNote(seconds) { return "Audio cost about $" + (seconds / 60 * audioCostPerMin()).toFixed(2) + "."; }
+function updateEstimate() {
+  const f = selected();
+  if (!f.length) { $("estimate").textContent = ""; return; }
+  let min = 0;
+  if (f.includes("brief")) min += (parseInt($("nStories").value, 10) || 5) * 0.5;
+  if (f.includes("dossier")) min += 7;
+  if (f.includes("debate")) min += 4.5;
+  const cost = min * audioCostPerMin() + f.length * SCRIPT_COST;
+  $("estimate").textContent = "About " + Math.round(min) + " min of audio, roughly $" + cost.toFixed(2) + " (estimate)";
+}
+["fmt_brief", "fmt_dossier", "fmt_debate", "nStories", "model"].forEach(id => $(id).addEventListener("change", updateEstimate));
+
+// ---------- Ask the hosts ----------
+let answerUrl = null;
+function promptAnswer(q, script) {
+  return `The listener is in the middle of this episode and has a question.
+Episode script:
+<<<
+${script.slice(0, 12000)}
+>>>
+Question: ${q}
+Write a short two-host exchange that answers it. Alex gives the answer clearly. Sam adds one useful point or asks one clarifying question. About one minute when spoken aloud, roughly 150 to 220 words. Use Google Search for anything the script does not cover. If something cannot be verified, say so.
+${styleClause("dialogue")}Rules:
+${DIALOGUE_RULES}
+Format: the first line is exactly "TOPIC: <short title>", then a blank line, then each turn on its own line as "Alex: ..." or "Sam: ...". Start straight with the answer, with no welcome and no sign-off. Output only the final dialogue, with no word counts, drafts or notes.`;
+}
+async function askHosts() {
+  const q = $("askQ").value.trim();
+  if (!q) throw new Error("Type a question first.");
+  status("Writing the answer...");
+  const raw = await generateText(promptAnswer(q, currentScript), "Writing the answer", t => countTurns(t, DOSSIER_SPK) >= 4);
+  const r = splitTopic(raw);
+  const syn = await synthesize("=== ANSWER: " + q.slice(0, 80) + " ===\n" + r.body, { music: false });
+  if (answerUrl) URL.revokeObjectURL(answerUrl);
+  answerUrl = URL.createObjectURL(wavFromPieces(syn.pieces));
+  const a = $("answerAudio");
+  a.src = answerUrl;
+  a.defaultPlaybackRate = a.playbackRate = SPEEDS[speedIdx];
+  a.classList.remove("hidden");
+  $("askMsg").textContent = "Answer ready (" + fmtTime(syn.elapsed) + "). Your episode is still loaded above.";
+  status("Answer ready. " + costNote(syn.elapsed));
+  $("audio").pause();
+  a.play().catch(() => {});
+}
+$("askBtn").onclick = () => run(askHosts);
+$("askQ").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); if (!$("askBtn").disabled) $("askBtn").click(); } });
+
+// ---------- Week in review ----------
+function promptReview(lines) {
+  return `Write a two-host weekly review for a listener. Today is ${todayLong()}.
+Hosts: Alex leads and explains. Sam asks sharp questions and connects the threads.
+This is everything the listener heard over the past week:
+${lines}
+Group it into three or four themes. Explain what mattered most, how stories developed during the week, and how the threads connect. Use Google Search to check the latest on the biggest threads, and say what is new since the listener heard them. End with what to watch next week.
+${sourcesBlock()}${styleClause("dialogue")}Length: about 6 minutes when spoken aloud. Do not count words and do not show any word counts, drafts, plans or notes. Output only the final dialogue.
+Rules:
+${DIALOGUE_RULES}
+Format: the first line is exactly "TOPIC: Week in review", then a blank line, then each turn on its own line as "Alex: ..." or "Sam: ...". Alex opens by welcoming the listener to the week in review.`;
+}
+async function makeReview() {
+  const rec = getMemory().filter(m => m.t >= Date.now() - 7 * 864e5);
+  if (!rec.length) throw new Error("Nothing to review yet. Make a few episodes first, with memory turned on in Settings.");
+  const lines = [];
+  rec.forEach(m => {
+    const d = new Date(m.t).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    m.items.forEach(i => lines.push("- " + d + ", " + m.type + ": " + i));
+  });
+  status("Writing the week in review...");
+  scriptSources = [];
+  const r = splitTopic(await generateText(promptReview(lines.slice(-70).join("\n")), "Writing the review", t => countTurns(t, DOSSIER_SPK) >= 8));
+  scriptSources.push({ label: "Week in review", items: lastGrounding });
+  const text = "=== DOSSIER: Week in review ===\n" + r.body;
+  $("script").value = text;
+  await voiceScript(text);
+}
+$("reviewBtn").onclick = () => run(makeReview);
+
+// ---------- Playback: speed, skip, sleep timer, lock screen controls ----------
+const SPEEDS = [1, 1.25, 1.5, 1.75, 2];
+let speedIdx = Math.max(0, SPEEDS.indexOf(parseFloat(load("speed")) || 1));
+function applySpeed() {
+  const sp = SPEEDS[speedIdx], a = $("audio");
+  a.defaultPlaybackRate = sp;
+  a.playbackRate = sp;
+  $("speedBtn").textContent = sp + "x";
+  save("speed", String(sp));
+}
+$("speedBtn").onclick = () => { speedIdx = (speedIdx + 1) % SPEEDS.length; applySpeed(); };
+$("back15").onclick = () => { const a = $("audio"); a.currentTime = Math.max(0, a.currentTime - 15); };
+$("fwd30").onclick = () => { const a = $("audio"); a.currentTime = Math.min(a.duration || 1e9, a.currentTime + 30); };
+
+const SLEEP_STEPS = [0, 10, 20, 30, 45, 60];
+let sleepIdx = 0, sleepDeadline = 0, sleepTick = null;
+function stopSleep() { sleepDeadline = 0; clearInterval(sleepTick); sleepTick = null; sleepIdx = 0; $("sleepBtn").textContent = "Sleep: off"; }
+function sleepLabel() {
+  const left = Math.max(0, Math.ceil((sleepDeadline - Date.now()) / 60000));
+  $("sleepBtn").textContent = "Sleep: " + left + " min";
+}
+$("sleepBtn").onclick = () => {
+  sleepIdx = (sleepIdx + 1) % SLEEP_STEPS.length;
+  clearInterval(sleepTick); sleepTick = null;
+  const m = SLEEP_STEPS[sleepIdx];
+  if (!m) { stopSleep(); return; }
+  sleepDeadline = Date.now() + m * 60000;
+  sleepLabel();
+  sleepTick = setInterval(() => {
+    if (Date.now() >= sleepDeadline) { $("audio").pause(); stopSleep(); } else sleepLabel();
+  }, 15000);
+};
+// Backup check while the screen is locked and timers are slowed down
+$("audio").addEventListener("timeupdate", () => {
+  if (sleepDeadline && Date.now() >= sleepDeadline) { $("audio").pause(); stopSleep(); }
+});
+
+function jumpChapter(dir) {
+  const a = $("audio"), ch = currentChapters;
+  if (!ch.length) return;
+  let idx = 0;
+  ch.forEach((c, i) => { if (a.currentTime >= c.start - 0.5) idx = i; });
+  if (dir < 0 && a.currentTime - ch[idx].start > 3) { a.currentTime = ch[idx].start; return; }
+  const target = Math.min(ch.length - 1, Math.max(0, idx + dir));
+  a.currentTime = ch[target].start;
+}
+function setupMediaSession(chapters) {
+  if (!("mediaSession" in navigator) || typeof MediaMetadata === "undefined") return;
+  try {
+    const title = chapters.map(c => c.label).join(", ").slice(0, 90) || "Episode";
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title, artist: "Daily Audio Briefing", album: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long" }),
+      artwork: [{ src: "icon-512.png", sizes: "512x512", type: "image/png" }]
+    });
+    const a = $("audio");
+    const set = (name, fn) => { try { navigator.mediaSession.setActionHandler(name, fn); } catch (e) {} };
+    set("play", () => a.play());
+    set("pause", () => a.pause());
+    set("seekbackward", () => { a.currentTime = Math.max(0, a.currentTime - 15); });
+    set("seekforward", () => { a.currentTime = Math.min(a.duration || 1e9, a.currentTime + 30); });
+    set("previoustrack", () => jumpChapter(-1));
+    set("nexttrack", () => jumpChapter(1));
+  } catch (e) {}
+}
+
 // ---------- Version and updates ----------
-const APP_VERSION = "2.0", APP_DATE = "18 Oct 2026";
+const APP_VERSION = "3.0", APP_DATE = "18 Oct 2026";
 $("ver").textContent = "v" + APP_VERSION;
 $("verLine").textContent = "Version " + APP_VERSION + " (" + APP_DATE + ")";
 const newer = (a, b) => {
@@ -1402,6 +1786,11 @@ $("memClearBtn").onclick = () => {
   renderMemoryNote();
 };
 renderMemoryNote();
+renderPresets();
+updateEstimate();
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
 
 // ---------- Look and feel ----------
 (function buildEq() {
