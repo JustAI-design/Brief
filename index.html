@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0F1B33">
+<meta name="app-version" content="2.0">
 <title>Daily Audio Briefing</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -34,6 +35,11 @@
 
   header { margin: 6px 2px 22px; }
   h1 { font: 800 clamp(38px, 8vw, 58px)/0.98 var(--display); letter-spacing: -0.03em; margin: 0 0 8px; }
+  .ver { display: inline-block; margin-left: 10px; padding: 2px 10px; border: 1px solid var(--line);
+         border-radius: 999px; font-size: 13px; color: var(--muted); vertical-align: 2px; }
+  .update { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+            background: var(--signal); color: var(--signal-ink); border-radius: 16px; padding: 12px 16px; margin-bottom: 16px; font-weight: 500; }
+  .update button { background: var(--signal-ink); color: var(--signal); padding: 8px 18px; min-height: 40px; border-radius: 999px; }
   .date { color: var(--muted); font-size: 17px; margin: 0; }
   h2 { font: 700 21px/1.2 var(--display); letter-spacing: -0.01em; margin: 0 0 14px; }
   label, .label { display: block; font-size: 14px; color: var(--muted); margin: 0 0 6px; }
@@ -164,9 +170,13 @@
 </head>
 <body>
 <main>
+  <div class="update hidden" id="updateBar">
+    <span>A newer version (<b id="newVer"></b>) is available.</span>
+    <button id="reloadBtn">Reload</button>
+  </div>
   <header>
     <h1>Daily Audio Briefing</h1>
-    <p class="date" id="today"></p>
+    <p class="date"><span id="today"></span><span class="ver" id="ver"></span></p>
   </header>
 
   <section class="console" aria-label="Player">
@@ -324,6 +334,9 @@
             <input type="text" id="textModel" value="gemini-3.8-flash">
           </div>
         </div>
+        <div class="check"><input type="checkbox" id="memoryOn"><label for="memoryOn">Remember what I've heard and avoid repeats</label></div>
+        <p class="note" id="memNote" style="margin-top:6px"></p>
+        <div class="actions" style="margin-top:8px"><button class="secondary" id="memClearBtn">Clear memory</button></div>
         <div class="check"><input type="checkbox" id="musicOn"><label for="musicOn">Add intro and outro music to the dossier and debate</label></div>
         <div class="row">
           <div>
@@ -340,6 +353,10 @@
           <button class="secondary" id="testBtn">Test connection</button>
         </div>
         <p class="note">Your key is stored only in this browser and sent only to Google's API.</p>
+        <div class="row" style="align-items:center">
+          <div style="flex:1 1 220px"><strong id="verLine"></strong><p class="note" id="verMsg" style="margin-top:4px"></p></div>
+          <div style="flex:0 0 auto"><button class="secondary" id="verBtn">Check for updates</button></div>
+        </div>
       </div>
     </details>
   </section>
@@ -367,7 +384,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ---------- Settings ----------
 const DEFAULTS = {
-  musicOn: true, musicVol: "0.5", cat_ai: true, cat_science: false, cat_custom: false, customTopic: "", sourcesCustom: "", nStories: "5", fmt_brief: true, fmt_dossier: false, fmt_debate: false, remember: true,
+  memoryOn: true, musicOn: true, musicVol: "0.5", cat_ai: true, cat_science: false, cat_custom: false, customTopic: "", sourcesCustom: "", nStories: "5", fmt_brief: true, fmt_dossier: false, fmt_debate: false, remember: true,
   vBrief: "Charon", vDosA: "Kore", vDosB: "Charon", vDebA: "Zephyr", vDebB: "Puck",
   model: "gemini-3.8-flash-tts", textModel: "gemini-3.8-flash", sourcesAI: "", sourcesScience: "", topicDossier: "", topicDebate: ""
 };
@@ -541,14 +558,60 @@ function cats() {
 const catLabel = () => cats().map(c => c.label).join(" and ");
 const catScope = () => cats().map(c => c.scope).join(" and ");
 
+// ---------- Memory between episodes (kept on this device) ----------
+const MEMORY_DAYS = 10;
+function getMemory() {
+  try { const m = JSON.parse(load("memory") || "[]"); return Array.isArray(m) ? m : []; } catch (e) { return []; }
+}
+function recentMemory() {
+  const cutoff = Date.now() - MEMORY_DAYS * 864e5;
+  return getMemory().filter(m => m.t >= cutoff);
+}
+function memoryBlock() {
+  if (!$("memoryOn").checked) return "";
+  const lines = [];
+  recentMemory().slice(-12).forEach(m => {
+    const d = new Date(m.t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    m.items.forEach(i => lines.push("- " + d + ", " + m.type + ": " + i));
+  });
+  if (!lines.length) return "";
+  return "\nWhat this listener has already heard in recent episodes:\n" + lines.slice(-30).join("\n") + "\n";
+}
+function rememberEpisode(script) {
+  if (!$("memoryOn").checked) return;
+  const mem = getMemory(), now = Date.now();
+  parseSections(script).forEach(sec => {
+    if (sec.type === "brief") {
+      const items = extractStories(sec.body).map(st => {
+        const m = st.text.match(/^(.+?[.!?])(\s|$)/);
+        return (m ? m[1] : st.text).slice(0, 220);
+      });
+      if (items.length) mem.push({ t: now, type: "brief", items });
+    } else {
+      mem.push({ t: now, type: sec.type, items: [sec.title || "untitled"] });
+    }
+  });
+  save("memory", JSON.stringify(mem.slice(-60)));
+  renderMemoryNote();
+}
+function renderMemoryNote() {
+  const rec = recentMemory();
+  const items = rec.reduce((a, m) => a + m.items.length, 0);
+  $("memNote").textContent = items
+    ? "Remembering " + items + " items from " + rec.length + " recent episodes (last " + MEMORY_DAYS + " days)."
+    : "Nothing remembered yet.";
+}
+
 function promptBrief() {
   const n = parseInt($("nStories").value, 10) || 5;
+  const mem = memoryBlock();
+  const memRule = mem ? '\n- Do not repeat a story the listener already heard unless there is a genuinely new development. For a follow-up, open that story with "An update on" or "Since last time" and give only what is new. Favor stories that are new to them.' : "";
   const words = n * 70;
   const split = cats().length > 1 ? `\n- Split the stories as evenly as possible between ${catLabel()}.` : "";
   return `Write a spoken news brief about the most important news from the last 24 to 48 hours in: ${catScope()}.
 Today is ${todayLong()}.
-${sourcesBlock()}
-Rules:
+${sourcesBlock()}${mem}
+Rules:${memRule}
 - Use Google Search. Only include facts you found in sources, and say "reportedly" where a claim is unconfirmed.
 - If a category has too little news in the last 48 hours, widen the window to the last two weeks and say so briefly.
 - Open with: "This is your ${catLabel()} news brief for ${todayLong()}."
@@ -563,7 +626,7 @@ function promptDossier(topic, context) {
   return `Write a two-host audio dossier that helps a listener understand one topic in depth. Today is ${todayLong()}.
 Hosts: Alex leads and explains. Sam asks sharp questions, pushes back, and checks the logic.
 Topic: ${topic || "choose the single story or theme in " + catScope() + " from the last week that most deserves a deep explanation."}
-${context ? "The listener just heard this story in their news brief and wants to go much deeper on it:\n" + context + "\nCover this story in depth. Go well beyond the summary, and search for fuller and newer reporting on it.\n" : ""}${sourcesBlock()}
+${context ? "The listener just heard this story in their news brief and wants to go much deeper on it:\n" + context + "\nCover this story in depth. Go well beyond the summary, and search for fuller and newer reporting on it.\n" : ""}${sourcesBlock()}${memoryBlock() ? memoryBlock() + (topic || context ? "If this connects to something the listener already heard, one host may refer back to it in a single sentence.\n" : "Choose a topic that is not already covered above.\n") : ""}
 Length: about 7 minutes when spoken aloud. Do not count words and do not show any word counts, drafts, plans or notes. Output only the final dialogue.
 Cover, without labeling sections: what happened, the background, how it works, who is affected, what is uncertain, and what to watch next.
 Rules:
@@ -574,7 +637,7 @@ function promptDebate(topic, covered, context) {
   return `Write a debate between two characters with strong opinions on a current issue${context ? "" : " in " + catLabel()}. Today is ${todayLong()}.
 Characters: Rae and Cole take opposing sides. Rae is a fast-talking pragmatist. Cole is a dry skeptic. They are sharp and passionate, they interrupt each other now and then, and they refuse to give away easy points. They attack the ideas, never each other personally.
 Issue: ${topic || (context ? "derive the single most contested question raised by this story, one where informed people disagree. The listener just heard it in their news brief:\n" + context : "pick a genuinely contested question raised by news in " + catScope() + " in the last week, one where informed people disagree." + (covered ? " Avoid this topic, already covered: " + covered + "." : ""))}
-${sourcesBlock()}
+${sourcesBlock()}${memoryBlock() ? memoryBlock() + (topic || context ? "If this connects to something the listener already heard, one character may refer back to it in a single sentence.\n" : "Choose a question that is not already covered above.\n") : ""}
 Length: about 4 to 5 minutes when spoken aloud. Do not count words and do not show any word counts, drafts, plans or notes. Output only the final dialogue.
 Rules:
 ${DIALOGUE_RULES}
@@ -868,6 +931,7 @@ async function voiceScript(text) {
   outro(lastSi);
   const blob = wavFromPieces(pieces);
   lastEpisode = { pieces, chapters, elapsed, script: text, saved: false };
+  rememberEpisode(text);
   showEpisode(blob, chapters, "audio-briefing-" + new Date().toISOString().slice(0, 10) + ".wav", true, text);
   status("Ready. Total length " + fmtTime(elapsed) + ". Tap play.");
   $("audio").play().catch(() => {});
@@ -1172,7 +1236,7 @@ function promptTopics(kind) {
     : "contested questions that informed people genuinely disagree about, each phrased as a question that can be argued for and against";
   return `Suggest exactly three current ${what}.
 Today is ${todayLong()}. Draw on news from the last week in: ${catScope()}.
-${sourcesBlock()}
+${sourcesBlock()}${memoryBlock() ? memoryBlock() + "Do not suggest anything already covered above.\n" : ""}
 Rules:
 - Use Google Search. Only suggest things you found in recent news.
 - The three suggestions must be clearly different from each other.
@@ -1291,6 +1355,53 @@ $("voiceAddBtn").onclick = () => {
 };
 renderMyVoices();
 ["vBrief", "vDosA", "vDosB", "vDebA", "vDebB", "model", "musicVol"].forEach(id => $(id).addEventListener("change", persist));
+
+// ---------- Version and updates ----------
+const APP_VERSION = "2.0", APP_DATE = "18 Oct 2026";
+$("ver").textContent = "v" + APP_VERSION;
+$("verLine").textContent = "Version " + APP_VERSION + " (" + APP_DATE + ")";
+const newer = (a, b) => {
+  const x = a.split(".").map(Number), y = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }
+  return false;
+};
+async function fetchRemoteVersion() {
+  const res = await fetch(location.pathname + "?nocache=" + Date.now(), { cache: "no-store" });
+  if (!res.ok) throw new Error("status " + res.status);
+  const m = (await res.text()).match(/name="app-version" content="([^"]+)"/);
+  if (!m) throw new Error("no version found");
+  return m[1];
+}
+function showUpdate(v) {
+  $("newVer").textContent = v;
+  $("updateBar").classList.remove("hidden");
+}
+const reloadFresh = () => location.replace(location.pathname + "?v=" + Date.now());
+$("reloadBtn").onclick = reloadFresh;
+$("verBtn").onclick = async () => {
+  const msg = $("verMsg");
+  msg.textContent = "Checking...";
+  try {
+    const v = await fetchRemoteVersion();
+    if (newer(v, APP_VERSION)) {
+      msg.textContent = "Version " + v + " is available.";
+      showUpdate(v);
+      $("verBtn").textContent = "Reload now";
+      $("verBtn").onclick = reloadFresh;
+    } else msg.textContent = "You have the latest version.";
+  } catch (e) {
+    msg.textContent = "Could not check. Open the hosted page, not a local file.";
+  }
+};
+if (location.protocol.startsWith("http")) {
+  fetchRemoteVersion().then(v => { if (newer(v, APP_VERSION)) showUpdate(v); }).catch(() => {});
+}
+$("memClearBtn").onclick = () => {
+  if (!confirm("Forget everything the page remembers about past episodes?")) return;
+  save("memory", "[]");
+  renderMemoryNote();
+};
+renderMemoryNote();
 
 // ---------- Look and feel ----------
 (function buildEq() {
