@@ -118,6 +118,15 @@
   details[open] > summary::after { transform: rotate(-135deg); }
   .panel { padding: 0 22px 22px; }
   .hidden { display: none; }
+  .deeper { margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.14); }
+  .deeper-title { color: var(--console-muted); font-size: 14px; margin-bottom: 6px; }
+  .dp { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+        padding: 12px 0; border-top: 1px solid rgba(255,255,255,.08); }
+  .dp:first-child { border-top: 0; }
+  .dp span { flex: 1 1 240px; font-size: 16px; line-height: 1.35; }
+  .dp .btns { display: flex; gap: 8px; flex: none; }
+  .dp button { background: rgba(255,255,255,.12); color: var(--console-ink); padding: 8px 16px; min-height: 40px;
+               font-size: 15px; border-radius: 999px; }
   .player-actions { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
   .player-actions a.dl { margin-top: 0; }
   .saveBtn { background: var(--signal); color: var(--signal-ink); padding: 10px 18px; min-height: 42px; font-size: 16px; border-radius: 999px; }
@@ -167,6 +176,10 @@
     <div id="player" class="hidden">
       <audio id="audio" controls playsinline></audio>
       <div class="chapters" id="chapters"></div>
+      <div class="deeper hidden" id="deeper">
+        <div class="deeper-title">Go deeper on a story</div>
+        <div id="deeperList"></div>
+      </div>
       <div class="player-actions">
         <button class="saveBtn hidden" id="saveBtn">Save to library</button>
         <a class="dl" id="dl" download>Download file</a>
@@ -546,21 +559,21 @@ Rules:
 - Close with: "That's the brief."
 Return only the script text.`;
 }
-function promptDossier(topic) {
+function promptDossier(topic, context) {
   return `Write a two-host audio dossier that helps a listener understand one topic in depth. Today is ${todayLong()}.
 Hosts: Alex leads and explains. Sam asks sharp questions, pushes back, and checks the logic.
 Topic: ${topic || "choose the single story or theme in " + catScope() + " from the last week that most deserves a deep explanation."}
-${sourcesBlock()}
+${context ? "The listener just heard this story in their news brief and wants to go much deeper on it:\n" + context + "\nCover this story in depth. Go well beyond the summary, and search for fuller and newer reporting on it.\n" : ""}${sourcesBlock()}
 Length: about 7 minutes when spoken aloud. Do not count words and do not show any word counts, drafts, plans or notes. Output only the final dialogue.
 Cover, without labeling sections: what happened, the background, how it works, who is affected, what is uncertain, and what to watch next.
 Rules:
 ${DIALOGUE_RULES}
 Format: the first line is exactly "TOPIC: <short title>", then a blank line, then each turn on its own line as "Alex: ..." or "Sam: ...". Alex opens by welcoming the listener to today's dossier and giving the date. End with a short two-sentence recap by Alex.`;
 }
-function promptDebate(topic, covered) {
-  return `Write a debate between two characters with strong opinions on a current issue in ${catLabel()}. Today is ${todayLong()}.
+function promptDebate(topic, covered, context) {
+  return `Write a debate between two characters with strong opinions on a current issue${context ? "" : " in " + catLabel()}. Today is ${todayLong()}.
 Characters: Rae and Cole take opposing sides. Rae is a fast-talking pragmatist. Cole is a dry skeptic. They are sharp and passionate, they interrupt each other now and then, and they refuse to give away easy points. They attack the ideas, never each other personally.
-Issue: ${topic || "pick a genuinely contested question raised by news in " + catScope() + " in the last week, one where informed people disagree." + (covered ? " Avoid this topic, already covered: " + covered + "." : "")}
+Issue: ${topic || (context ? "derive the single most contested question raised by this story, one where informed people disagree. The listener just heard it in their news brief:\n" + context : "pick a genuinely contested question raised by news in " + catScope() + " in the last week, one where informed people disagree." + (covered ? " Avoid this topic, already covered: " + covered + "." : ""))}
 ${sourcesBlock()}
 Length: about 4 to 5 minutes when spoken aloud. Do not count words and do not show any word counts, drafts, plans or notes. Output only the final dialogue.
 Rules:
@@ -579,11 +592,14 @@ function splitTopic(text) {
 function selected() {
   return ["brief", "dossier", "debate"].filter(f => $("fmt_" + f).checked);
 }
-async function writeScripts() {
-  const sel = selected();
+async function writeScripts(opts = {}) {
+  // opts.only = "dossier" or "debate" writes just that part (used by Go deeper)
+  const sel = opts.only ? [opts.only] : selected();
   if (!sel.length) throw new Error("Pick at least one format under What to include.");
-  if ($("cat_custom").checked && !$("customTopic").value.trim()) throw new Error("Type your custom topic, or untick Custom.");
-  if (!cats().length) throw new Error("Pick at least one category.");
+  if (!opts.only) {
+    if ($("cat_custom").checked && !$("customTopic").value.trim()) throw new Error("Type your custom topic, or untick Custom.");
+    if (!cats().length) throw new Error("Pick at least one category.");
+  }
   const sections = [];
   let dossierTopic = "";
   for (const f of sel) {
@@ -592,11 +608,11 @@ async function writeScripts() {
       const t = await generateText(promptBrief(), "Writing the brief", t => t.length > 200);
       sections.push("=== BRIEF ===\n" + t);
     } else if (f === "dossier") {
-      const r = splitTopic(await generateText(promptDossier($("topicDossier").value.trim()), "Writing the dossier", t => countTurns(t, DOSSIER_SPK) >= 8));
+      const r = splitTopic(await generateText(promptDossier(opts.topic || $("topicDossier").value.trim(), opts.context), "Writing the dossier", t => countTurns(t, DOSSIER_SPK) >= 8));
       dossierTopic = r.topic;
       sections.push("=== DOSSIER: " + (r.topic || "Deep dive") + " ===\n" + r.body);
     } else {
-      const r = splitTopic(await generateText(promptDebate($("topicDebate").value.trim(), dossierTopic), "Writing the debate", t => countTurns(t, DEBATE_SPK) >= 6));
+      const r = splitTopic(await generateText(promptDebate(opts.only ? "" : $("topicDebate").value.trim(), dossierTopic, opts.context), "Writing the debate", t => countTurns(t, DEBATE_SPK) >= 6));
       sections.push("=== DEBATE: " + (r.topic || "Today's debate") + " ===\n" + r.body);
     }
     $("script").value = sections.join("\n\n");
@@ -852,7 +868,7 @@ async function voiceScript(text) {
   outro(lastSi);
   const blob = wavFromPieces(pieces);
   lastEpisode = { pieces, chapters, elapsed, script: text, saved: false };
-  showEpisode(blob, chapters, "audio-briefing-" + new Date().toISOString().slice(0, 10) + ".wav", true);
+  showEpisode(blob, chapters, "audio-briefing-" + new Date().toISOString().slice(0, 10) + ".wav", true, text);
   status("Ready. Total length " + fmtTime(elapsed) + ". Tap play.");
   $("audio").play().catch(() => {});
 }
@@ -862,7 +878,7 @@ let lastEpisode = null, currentUrl = null;
 const fmtTime = sec => Math.floor(sec / 60) + ":" + String(Math.floor(sec % 60)).padStart(2, "0");
 const mb = bytes => (bytes / 1048576).toFixed(1) + " MB";
 
-function showEpisode(blob, chapters, dlName, canSave) {
+function showEpisode(blob, chapters, dlName, canSave, script) {
   if (currentUrl) URL.revokeObjectURL(currentUrl);
   currentUrl = URL.createObjectURL(blob);
   const audio = $("audio");
@@ -884,7 +900,47 @@ function showEpisode(blob, chapters, dlName, canSave) {
   sb.classList.toggle("hidden", !canSave);
   sb.disabled = false;
   sb.textContent = "Save to library";
+  renderDeeper(script);
   $("player").classList.remove("hidden");
+}
+
+// ---------- Go deeper: turn each brief story into a dossier or a debate ----------
+function extractStories(body) {
+  return body.split(/\n\s*\n/).map(p => p.trim()).map(p =>
+      p.replace(/^This is your [^.]*news brief for [^.]*\.\s*/i, "").replace(/\s*That'?s the brief\.?\s*$/i, "").trim())
+    .filter(p => p.length > 60)
+    .map(p => {
+      const m = p.match(/^(.+?[.!?])(\s|$)/);
+      let label = m && m[1].length >= 25 ? m[1] : p;
+      if (label.length > 100) { const cut = label.slice(0, 96); label = cut.slice(0, cut.lastIndexOf(" ")).trim() + "..."; }
+      return { text: p, label };
+    });
+}
+function renderDeeper(script) {
+  const box = $("deeper"), list = $("deeperList");
+  list.innerHTML = "";
+  const brief = script ? parseSections(script).find(x => x.type === "brief") : null;
+  const stories = brief ? extractStories(brief.body) : [];
+  box.classList.toggle("hidden", !stories.length);
+  stories.forEach(st => {
+    const row = document.createElement("div");
+    row.className = "dp";
+    const t = document.createElement("span");
+    t.textContent = st.label;
+    const btns = document.createElement("div");
+    btns.className = "btns";
+    [["dossier", "Dossier"], ["debate", "Debate"]].forEach(([kind, name]) => {
+      const b = document.createElement("button");
+      b.textContent = name;
+      b.onclick = () => run(async () => {
+        const text = await writeScripts({ only: kind, topic: kind === "dossier" ? st.label : "", context: st.text });
+        await voiceScript(text);
+      });
+      btns.appendChild(b);
+    });
+    row.append(t, btns);
+    list.appendChild(row);
+  });
 }
 
 function openDb() {
@@ -1013,7 +1069,7 @@ async function playSaved(id) {
   const meta = await dbGet("meta", id), rec = await dbGet("audio", id);
   if (!meta || !rec) { status("That episode is no longer in the library.", true); return renderLibrary(); }
   const blob = new Blob([rec.data], { type: meta.type });
-  showEpisode(blob, meta.chapters, "audio-briefing-" + new Date(meta.created).toISOString().slice(0, 10) + "." + meta.ext, false);
+  showEpisode(blob, meta.chapters, "audio-briefing-" + new Date(meta.created).toISOString().slice(0, 10) + "." + meta.ext, false, meta.script);
   status("Saved episode, " + fmtTime(meta.duration) + ". Tap play.");
   window.scrollTo({ top: 0, behavior: "smooth" });
   $("audio").play().catch(() => {});
