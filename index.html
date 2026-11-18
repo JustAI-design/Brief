@@ -18,7 +18,7 @@
 <style>
   :root {
     --bg: #F6F7F9; --surface: #FFFFFF; --ink: #12151C; --muted: #5E6675; --line: #E2E5EB;
-    --btn: #12151C; --btn-ink: #FFFFFF; --accent: #4F46E5; --accent-ink: #FFFFFF; --soft: #EDEFF4; --tint: #EDEFF4;
+    --btn: #12151C; --btn-ink: #FFFFFF; --asoft: #E6E5FC; --accent: #4F46E5; --accent-ink: #FFFFFF; --soft: #EDEFF4; --tint: #EDEFF4;
     --console-ink: #12151C; --console-muted: #5E6675; --signal: #4F46E5; --signal-ink: #FFFFFF;
     --err: #C2261B; --err-console: #C2261B;
     --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
@@ -31,7 +31,7 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #0C0E13; --surface: #151922; --ink: #ECEFF5; --muted: #98A1B3; --line: #262C38;
-      --btn: #ECEFF5; --btn-ink: #12151C; --accent: #8B93FF; --accent-ink: #0C0E13; --soft: #1D222D; --tint: #1D222D;
+      --btn: #ECEFF5; --btn-ink: #12151C; --asoft: #262B55; --accent: #8B93FF; --accent-ink: #0C0E13; --soft: #1D222D; --tint: #1D222D;
       --console-ink: #ECEFF5; --console-muted: #98A1B3; --signal: #8B93FF; --signal-ink: #0C0E13;
       --err: #FF9C93; --err-console: #FF9C93;
     }
@@ -298,6 +298,23 @@
   .ep-text strong { font: 600 16px/1.25 var(--display); }
   .ep-btns .play { background: var(--btn); color: var(--btn-ink); }
   .badge-new { background: var(--accent); }
+
+  /* v3.8.1: clear colour for selected states */
+  .chip input:checked + span { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+  .tile input:checked + .tile-body { border-color: var(--accent); background: var(--asoft); box-shadow: inset 0 0 0 1px var(--accent); }
+  .tile input:checked + .tile-body svg { stroke: var(--accent); }
+  .tile input:checked + .tile-body strong { color: var(--accent); }
+  .tile input:checked + .tile-body::after { border-color: var(--accent); background-color: var(--accent); }
+  .sugg.on { border-color: var(--accent); background: var(--asoft); color: var(--accent); font-weight: 600; }
+  .sugg:hover { border-color: var(--accent); }
+  .topicBlock { border-left: 3px solid var(--accent); }
+  .topicBlock input:focus-visible { border-color: var(--accent); }
+  .pchip { background: var(--soft); color: var(--ink); }
+  .pchip.save { background: transparent; color: var(--muted); }
+  .vchip { background: var(--asoft); }
+  .ep-btns .play, .saveBtn { background: var(--accent); color: var(--accent-ink); }
+  .usual { background: var(--asoft); color: var(--accent); }
+  a.dl { color: var(--accent); }
   @media (prefers-reduced-motion: reduce) { #eq i { transition: none; } }
 
   @media (prefers-reduced-motion: reduce) {
